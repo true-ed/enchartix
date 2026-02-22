@@ -1,0 +1,21 @@
+{
+  "name": "@enchartix/core",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "watch": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production"
+  },
+  "dependencies": {
+    "three": "^0.160.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "builtin-modules": "^5.0.0",
+    "esbuild": "^0.27.3",
+    "obsidian": "^1.12.2",
+    "typescript": "^5.9.3",
+    "vite": "^5.0.0"
+  }
+}

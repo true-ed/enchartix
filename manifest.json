@@ -1,0 +1,10 @@
+{
+  "id": "enchartix",
+  "name": "Enchartix 3D Graph",
+  "version": "1.0.0",
+  "minAppVersion": "1.4.0",
+  "description": "3D data visualization and cardiograms for Dataview",
+  "author": "Prykhozhai Andrii-Eduard",
+  "authorUrl": "https://github.com/true-ed",
+  "isDesktopOnly": false
+}
