@@ -21588,47 +21588,24 @@ var EnchartixGraph = class {
   }
   initDOM() {
     this.chartWrapper = document.createElement("div");
-    this.chartWrapper.style.width = "100%";
-    this.chartWrapper.style.height = "450px";
-    this.chartWrapper.style.borderRadius = "16px";
-    this.chartWrapper.style.overflow = "hidden";
-    this.chartWrapper.style.position = "relative";
-    this.chartWrapper.style.boxSizing = "border-box";
+    this.chartWrapper.className = "enchartix-wrapper";
     this.uiOverlay = document.createElement("div");
-    this.uiOverlay.style.position = "absolute";
-    this.uiOverlay.style.bottom = "20px";
-    this.uiOverlay.style.left = "20px";
-    this.uiOverlay.style.pointerEvents = "none";
-    this.uiOverlay.style.display = "flex";
-    this.uiOverlay.style.flexDirection = "column";
-    this.uiOverlay.style.gap = "10px";
+    this.uiOverlay.className = "enchartix-ui-overlay";
     this.toggleBtn = document.createElement("button");
     this.toggleBtn.innerText = this.labels.viewToggle2D;
-    this.toggleBtn.style.padding = "8px 16px";
-    this.toggleBtn.style.borderRadius = "6px";
-    this.toggleBtn.style.cursor = "pointer";
-    this.toggleBtn.style.fontWeight = "bold";
-    this.toggleBtn.style.pointerEvents = "auto";
-    this.toggleBtn.style.width = "fit-content";
-    this.toggleBtn.style.transition = "all 0.3s ease";
+    this.toggleBtn.className = "enchartix-toggle-btn";
     this.toggleBtn.onclick = () => this.toggleViewMode();
     this.uiOverlay.appendChild(this.toggleBtn);
     this.tooltip = document.createElement("div");
-    this.tooltip.style.position = "absolute";
-    this.tooltip.style.borderRadius = "8px";
-    this.tooltip.style.padding = "10px 14px";
-    this.tooltip.style.pointerEvents = "none";
-    this.tooltip.style.opacity = "0";
-    this.tooltip.style.transition = "opacity 0.2s ease, background 0.3s ease";
-    this.tooltip.style.backdropFilter = "blur(4px)";
-    this.tooltip.style.zIndex = "10";
-    this.tooltip.style.whiteSpace = "nowrap";
+    this.tooltip.className = "enchartix-tooltip";
     const ttTitle = document.createElement("div");
     ttTitle.id = "tt-title";
-    ttTitle.style.cssText = `font-size:14px;font-weight:bold;margin-bottom:6px;border-bottom:1px solid ${this.themeColor}44;padding-bottom:4px;color:${this.themeColor}`;
+    ttTitle.className = "enchartix-tooltip-title";
+    ttTitle.style.setProperty("color", this.themeColor);
+    ttTitle.style.setProperty("border-bottom-color", `${this.themeColor}44`);
     const ttDataContainer = document.createElement("div");
     ttDataContainer.id = "tt-data";
-    ttDataContainer.style.cssText = "font-size:13px;line-height:1.5;";
+    ttDataContainer.className = "enchartix-tooltip-data";
     this.tooltip.appendChild(ttTitle);
     this.tooltip.appendChild(ttDataContainer);
     this.chartWrapper.appendChild(this.uiOverlay);
@@ -21638,15 +21615,30 @@ var EnchartixGraph = class {
   }
   updateDOMTheme(isDark) {
     const { bgStr } = generateThemeColors(this.themeColor, isDark);
-    this.chartWrapper.style.backgroundColor = bgStr;
     const shadowAlpha = isDark ? "rgba(0,0,0,0.8)" : "rgba(0,0,0,0.15)";
-    this.chartWrapper.style.boxShadow = `inset 0 10px 30px ${shadowAlpha}, inset 0 0 20px ${this.themeColor}33`;
-    this.toggleBtn.style.background = isDark ? `${this.themeColor}22` : `${this.themeColor}15`;
-    this.toggleBtn.style.border = `1px solid ${this.themeColor}`;
-    this.toggleBtn.style.color = isDark ? this.themeColor : "#222";
-    this.tooltip.style.background = isDark ? "rgba(10, 10, 20, 0.85)" : "rgba(255, 255, 255, 0.9)";
-    this.tooltip.style.color = isDark ? "#fff" : "#222";
-    this.tooltip.style.boxShadow = isDark ? "0 4px 15px rgba(0, 0, 0, 0.5)" : "0 4px 15px rgba(0, 0, 0, 0.1)";
+    this.chartWrapper.style.setProperty("background-color", bgStr);
+    this.chartWrapper.style.setProperty(
+      "box-shadow",
+      `inset 0 10px 30px ${shadowAlpha}, inset 0 0 20px ${this.themeColor}33`
+    );
+    this.toggleBtn.style.setProperty(
+      "background",
+      isDark ? `${this.themeColor}22` : `${this.themeColor}15`
+    );
+    this.toggleBtn.style.setProperty("border", `1px solid ${this.themeColor}`);
+    this.toggleBtn.style.setProperty(
+      "color",
+      isDark ? this.themeColor : "#222"
+    );
+    this.tooltip.style.setProperty(
+      "background",
+      isDark ? "rgba(10, 10, 20, 0.85)" : "rgba(255, 255, 255, 0.9)"
+    );
+    this.tooltip.style.setProperty("color", isDark ? "#fff" : "#222");
+    this.tooltip.style.setProperty(
+      "box-shadow",
+      isDark ? "0 4px 15px rgba(0, 0, 0, 0.5)" : "0 4px 15px rgba(0, 0, 0, 0.1)"
+    );
   }
   initThreeJS() {
     this.clientW = Math.max(this.chartWrapper.clientWidth, 100);
@@ -22126,7 +22118,7 @@ var EnchartixGraph = class {
     if (this.hoveredSegment) {
       this.hoveredSegment.material.opacity = 0;
       this.hoveredSegment = null;
-      this.tooltip.style.opacity = "0";
+      this.tooltip.style.setProperty("opacity", "0");
       this.vGridMat.uniforms.targetFill.value = 0;
     }
     this.transition.startPos.copy(this.camera.position);
@@ -22201,13 +22193,19 @@ var EnchartixGraph = class {
           cumulativeDiv.appendChild(cumulativeBold);
           ttData.append(totalDiv, exerciseDiv, cumulativeDiv);
         }
-        this.tooltip.style.opacity = "1";
+        this.tooltip.style.setProperty("opacity", "1");
         const tw = this.tooltip.offsetWidth, th = this.tooltip.offsetHeight;
         let tLeft = clientX - rect.left + 15, tTop = clientY - rect.top + 15;
         if (tLeft + tw > rect.width) tLeft = clientX - rect.left - tw - 15;
         if (tTop + th > rect.height) tTop = clientY - rect.top - th - 15;
-        this.tooltip.style.left = `${Math.max(10, Math.min(tLeft, rect.width - tw - 10))}px`;
-        this.tooltip.style.top = `${Math.max(10, Math.min(tTop, rect.height - th - 10))}px`;
+        this.tooltip.style.setProperty(
+          "left",
+          `${Math.max(10, Math.min(tLeft, rect.width - tw - 10))}px`
+        );
+        this.tooltip.style.setProperty(
+          "top",
+          `${Math.max(10, Math.min(tTop, rect.height - th - 10))}px`
+        );
       } else {
         if (this.hoveredSegment) {
           this.hoveredSegment.material.opacity = 0;
@@ -22219,7 +22217,7 @@ var EnchartixGraph = class {
             }
           });
         }
-        this.tooltip.style.opacity = "0";
+        this.tooltip.style.setProperty("opacity", "0");
       }
     };
     this.chartWrapper.addEventListener(
@@ -22241,7 +22239,7 @@ var EnchartixGraph = class {
         this.hoveredSegment.material.opacity = 0;
         this.hoveredSegment = null;
       }
-      this.tooltip.style.opacity = "0";
+      this.tooltip.style.setProperty("opacity", "0");
     });
     this.controls.addEventListener("start", () => {
       if (this.transition.active) {
@@ -22427,7 +22425,8 @@ var EnchartixGraph = class {
     this.scene.traverse((object) => {
       if (object.geometry) object.geometry.dispose();
       if (object.material) {
-        if (Array.isArray(object.material)) object.material.forEach((m) => m.dispose());
+        if (Array.isArray(object.material))
+          object.material.forEach((m) => m.dispose());
         else object.material.dispose();
       }
     });
@@ -22442,12 +22441,12 @@ var EnchartixGraph = class {
 
 // src/main.ts
 var EnchartixPlugin = class extends import_obsidian.Plugin {
-  async onload() {
-    console.log("\u{1F52E} Enchartix 3D Graph loaded!");
+  onload() {
+    console.debug("\u{1F52E} Enchartix 3D Graph loaded!");
     window.EnchartixGraph = EnchartixGraph;
   }
   onunload() {
-    console.log("\u{1F6D1} Enchartix 3D Graph unloaded!");
+    console.debug("\u{1F6D1} Enchartix 3D Graph unloaded!");
     delete window.EnchartixGraph;
   }
 };
