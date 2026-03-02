@@ -219,8 +219,10 @@ export class EnchartixGraph {
     ttTitle.id = "tt-title";
     ttTitle.className = "enchartix-tooltip-title";
     // Dynamic theme colors must use setProperty
-    ttTitle.style.setProperty("color", this.themeColor);
-    ttTitle.style.setProperty("border-bottom-color", `${this.themeColor}44`);
+    ttTitle.setCssProps({
+      color: this.themeColor,
+      "border-bottom-color": `${this.themeColor}44`,
+    });
 
     const ttDataContainer = document.createElement("div");
     ttDataContainer.id = "tt-data";
@@ -242,33 +244,26 @@ export class EnchartixGraph {
     const shadowAlpha = isDark ? "rgba(0,0,0,0.8)" : "rgba(0,0,0,0.15)";
 
     // Apply dynamic theme properties
-    this.chartWrapper.style.setProperty("background-color", bgStr);
-    this.chartWrapper.style.setProperty(
-      "box-shadow",
-      `inset 0 10px 30px ${shadowAlpha}, inset 0 0 20px ${this.themeColor}33`,
-    );
+    this.chartWrapper.setCssProps({
+      "background-color": bgStr,
+      "box-shadow": `inset 0 10px 30px ${shadowAlpha}, inset 0 0 20px ${this.themeColor}33`,
+    });
 
-    this.toggleBtn.style.setProperty(
-      "background",
-      isDark ? `${this.themeColor}22` : `${this.themeColor}15`,
-    );
-    this.toggleBtn.style.setProperty("border", `1px solid ${this.themeColor}`);
-    this.toggleBtn.style.setProperty(
-      "color",
-      isDark ? this.themeColor : "#222",
-    );
+    this.toggleBtn.setCssProps({
+      background: isDark ? `${this.themeColor}22` : `${this.themeColor}15`,
+      border: `1px solid ${this.themeColor}`,
+      color: isDark ? this.themeColor : "#222",
+    });
 
-    this.tooltip.style.setProperty(
-      "background",
-      isDark ? "rgba(10, 10, 20, 0.85)" : "rgba(255, 255, 255, 0.9)",
-    );
-    this.tooltip.style.setProperty("color", isDark ? "#fff" : "#222");
-    this.tooltip.style.setProperty(
-      "box-shadow",
-      isDark
+    this.tooltip.setCssProps({
+      background: isDark
+        ? "rgba(10, 10, 20, 0.85)"
+        : "rgba(255, 255, 255, 0.9)",
+      color: isDark ? "#fff" : "#222",
+      "box-shadow": isDark
         ? "0 4px 15px rgba(0, 0, 0, 0.5)"
         : "0 4px 15px rgba(0, 0, 0, 0.1)",
-    );
+    });
   }
 
   initThreeJS() {
@@ -812,7 +807,7 @@ export class EnchartixGraph {
     if (this.hoveredSegment) {
       this.hoveredSegment.material.opacity = 0.0;
       this.hoveredSegment = null;
-      this.tooltip.style.setProperty("opacity", "0");
+      this.tooltip.setCssProps({ opacity: "0" });
       this.vGridMat.uniforms.targetFill.value = 0.0;
     }
 
@@ -886,9 +881,10 @@ export class EnchartixGraph {
 
           this.tooltip.querySelector("#tt-title").innerText =
             `${data.date} (${data.exercise})`;
-          this.tooltip.querySelector("#tt-title").style.color = data.color;
-          this.tooltip.querySelector("#tt-title").style.borderColor =
-            data.color;
+          this.tooltip.querySelector("#tt-title").setCssProps({
+            color: data.color,
+            "border-color": data.color,
+          });
 
           const ttData = this.tooltip.querySelector("#tt-data");
           ttData.replaceChildren();
@@ -912,8 +908,6 @@ export class EnchartixGraph {
         }
 
         // Update tooltip position and visibility
-        this.tooltip.style.setProperty("opacity", "1");
-
         const tw = this.tooltip.offsetWidth,
           th = this.tooltip.offsetHeight;
 
@@ -923,14 +917,11 @@ export class EnchartixGraph {
         if (tLeft + tw > rect.width) tLeft = clientX - rect.left - tw - 15;
         if (tTop + th > rect.height) tTop = clientY - rect.top - th - 15;
 
-        this.tooltip.style.setProperty(
-          "left",
-          `${Math.max(10, Math.min(tLeft, rect.width - tw - 10))}px`,
-        );
-        this.tooltip.style.setProperty(
-          "top",
-          `${Math.max(10, Math.min(tTop, rect.height - th - 10))}px`,
-        );
+        this.tooltip.setCssProps({
+          opacity: "1",
+          left: `${Math.max(10, Math.min(tLeft, rect.width - tw - 10))}px`,
+          top: `${Math.max(10, Math.min(tTop, rect.height - th - 10))}px`,
+        });
       } else {
         if (this.hoveredSegment) {
           this.hoveredSegment.material.opacity = 0.0;
@@ -943,7 +934,7 @@ export class EnchartixGraph {
           });
         }
         // Hide tooltip
-        this.tooltip.style.setProperty("opacity", "0");
+        this.tooltip.setCssProps({ opacity: "0" });
       }
     };
 
@@ -966,7 +957,7 @@ export class EnchartixGraph {
         this.hoveredSegment = null;
       }
       // Hide tooltip on leave
-      this.tooltip.style.setProperty('opacity', '0');
+      this.tooltip.setCssProps({ opacity: "0" });
     });
 
     this.controls.addEventListener("start", () => {
