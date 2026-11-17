@@ -17873,6 +17873,412 @@ var Scene = class extends Object3D {
     return data;
   }
 };
+var InterleavedBuffer = class {
+  constructor(array, stride) {
+    this.isInterleavedBuffer = true;
+    this.array = array;
+    this.stride = stride;
+    this.count = array !== void 0 ? array.length / stride : 0;
+    this.usage = StaticDrawUsage;
+    this._updateRange = { offset: 0, count: -1 };
+    this.updateRanges = [];
+    this.version = 0;
+    this.uuid = generateUUID();
+  }
+  onUploadCallback() {
+  }
+  set needsUpdate(value) {
+    if (value === true) this.version++;
+  }
+  get updateRange() {
+    console.warn("THREE.InterleavedBuffer: updateRange() is deprecated and will be removed in r169. Use addUpdateRange() instead.");
+    return this._updateRange;
+  }
+  setUsage(value) {
+    this.usage = value;
+    return this;
+  }
+  addUpdateRange(start, count) {
+    this.updateRanges.push({ start, count });
+  }
+  clearUpdateRanges() {
+    this.updateRanges.length = 0;
+  }
+  copy(source) {
+    this.array = new source.array.constructor(source.array);
+    this.count = source.count;
+    this.stride = source.stride;
+    this.usage = source.usage;
+    return this;
+  }
+  copyAt(index1, attribute, index2) {
+    index1 *= this.stride;
+    index2 *= attribute.stride;
+    for (let i = 0, l = this.stride; i < l; i++) {
+      this.array[index1 + i] = attribute.array[index2 + i];
+    }
+    return this;
+  }
+  set(value, offset = 0) {
+    this.array.set(value, offset);
+    return this;
+  }
+  clone(data) {
+    if (data.arrayBuffers === void 0) {
+      data.arrayBuffers = {};
+    }
+    if (this.array.buffer._uuid === void 0) {
+      this.array.buffer._uuid = generateUUID();
+    }
+    if (data.arrayBuffers[this.array.buffer._uuid] === void 0) {
+      data.arrayBuffers[this.array.buffer._uuid] = this.array.slice(0).buffer;
+    }
+    const array = new this.array.constructor(data.arrayBuffers[this.array.buffer._uuid]);
+    const ib = new this.constructor(array, this.stride);
+    ib.setUsage(this.usage);
+    return ib;
+  }
+  onUpload(callback) {
+    this.onUploadCallback = callback;
+    return this;
+  }
+  toJSON(data) {
+    if (data.arrayBuffers === void 0) {
+      data.arrayBuffers = {};
+    }
+    if (this.array.buffer._uuid === void 0) {
+      this.array.buffer._uuid = generateUUID();
+    }
+    if (data.arrayBuffers[this.array.buffer._uuid] === void 0) {
+      data.arrayBuffers[this.array.buffer._uuid] = Array.from(new Uint32Array(this.array.buffer));
+    }
+    return {
+      uuid: this.uuid,
+      buffer: this.array.buffer._uuid,
+      type: this.array.constructor.name,
+      stride: this.stride
+    };
+  }
+};
+var _vector$6 = /* @__PURE__ */ new Vector3();
+var InterleavedBufferAttribute = class _InterleavedBufferAttribute {
+  constructor(interleavedBuffer, itemSize, offset, normalized = false) {
+    this.isInterleavedBufferAttribute = true;
+    this.name = "";
+    this.data = interleavedBuffer;
+    this.itemSize = itemSize;
+    this.offset = offset;
+    this.normalized = normalized;
+  }
+  get count() {
+    return this.data.count;
+  }
+  get array() {
+    return this.data.array;
+  }
+  set needsUpdate(value) {
+    this.data.needsUpdate = value;
+  }
+  applyMatrix4(m) {
+    for (let i = 0, l = this.data.count; i < l; i++) {
+      _vector$6.fromBufferAttribute(this, i);
+      _vector$6.applyMatrix4(m);
+      this.setXYZ(i, _vector$6.x, _vector$6.y, _vector$6.z);
+    }
+    return this;
+  }
+  applyNormalMatrix(m) {
+    for (let i = 0, l = this.count; i < l; i++) {
+      _vector$6.fromBufferAttribute(this, i);
+      _vector$6.applyNormalMatrix(m);
+      this.setXYZ(i, _vector$6.x, _vector$6.y, _vector$6.z);
+    }
+    return this;
+  }
+  transformDirection(m) {
+    for (let i = 0, l = this.count; i < l; i++) {
+      _vector$6.fromBufferAttribute(this, i);
+      _vector$6.transformDirection(m);
+      this.setXYZ(i, _vector$6.x, _vector$6.y, _vector$6.z);
+    }
+    return this;
+  }
+  setX(index, x) {
+    if (this.normalized) x = normalize(x, this.array);
+    this.data.array[index * this.data.stride + this.offset] = x;
+    return this;
+  }
+  setY(index, y) {
+    if (this.normalized) y = normalize(y, this.array);
+    this.data.array[index * this.data.stride + this.offset + 1] = y;
+    return this;
+  }
+  setZ(index, z) {
+    if (this.normalized) z = normalize(z, this.array);
+    this.data.array[index * this.data.stride + this.offset + 2] = z;
+    return this;
+  }
+  setW(index, w) {
+    if (this.normalized) w = normalize(w, this.array);
+    this.data.array[index * this.data.stride + this.offset + 3] = w;
+    return this;
+  }
+  getX(index) {
+    let x = this.data.array[index * this.data.stride + this.offset];
+    if (this.normalized) x = denormalize(x, this.array);
+    return x;
+  }
+  getY(index) {
+    let y = this.data.array[index * this.data.stride + this.offset + 1];
+    if (this.normalized) y = denormalize(y, this.array);
+    return y;
+  }
+  getZ(index) {
+    let z = this.data.array[index * this.data.stride + this.offset + 2];
+    if (this.normalized) z = denormalize(z, this.array);
+    return z;
+  }
+  getW(index) {
+    let w = this.data.array[index * this.data.stride + this.offset + 3];
+    if (this.normalized) w = denormalize(w, this.array);
+    return w;
+  }
+  setXY(index, x, y) {
+    index = index * this.data.stride + this.offset;
+    if (this.normalized) {
+      x = normalize(x, this.array);
+      y = normalize(y, this.array);
+    }
+    this.data.array[index + 0] = x;
+    this.data.array[index + 1] = y;
+    return this;
+  }
+  setXYZ(index, x, y, z) {
+    index = index * this.data.stride + this.offset;
+    if (this.normalized) {
+      x = normalize(x, this.array);
+      y = normalize(y, this.array);
+      z = normalize(z, this.array);
+    }
+    this.data.array[index + 0] = x;
+    this.data.array[index + 1] = y;
+    this.data.array[index + 2] = z;
+    return this;
+  }
+  setXYZW(index, x, y, z, w) {
+    index = index * this.data.stride + this.offset;
+    if (this.normalized) {
+      x = normalize(x, this.array);
+      y = normalize(y, this.array);
+      z = normalize(z, this.array);
+      w = normalize(w, this.array);
+    }
+    this.data.array[index + 0] = x;
+    this.data.array[index + 1] = y;
+    this.data.array[index + 2] = z;
+    this.data.array[index + 3] = w;
+    return this;
+  }
+  clone(data) {
+    if (data === void 0) {
+      console.log("THREE.InterleavedBufferAttribute.clone(): Cloning an interleaved buffer attribute will de-interleave buffer data.");
+      const array = [];
+      for (let i = 0; i < this.count; i++) {
+        const index = i * this.data.stride + this.offset;
+        for (let j = 0; j < this.itemSize; j++) {
+          array.push(this.data.array[index + j]);
+        }
+      }
+      return new BufferAttribute(new this.array.constructor(array), this.itemSize, this.normalized);
+    } else {
+      if (data.interleavedBuffers === void 0) {
+        data.interleavedBuffers = {};
+      }
+      if (data.interleavedBuffers[this.data.uuid] === void 0) {
+        data.interleavedBuffers[this.data.uuid] = this.data.clone(data);
+      }
+      return new _InterleavedBufferAttribute(data.interleavedBuffers[this.data.uuid], this.itemSize, this.offset, this.normalized);
+    }
+  }
+  toJSON(data) {
+    if (data === void 0) {
+      console.log("THREE.InterleavedBufferAttribute.toJSON(): Serializing an interleaved buffer attribute will de-interleave buffer data.");
+      const array = [];
+      for (let i = 0; i < this.count; i++) {
+        const index = i * this.data.stride + this.offset;
+        for (let j = 0; j < this.itemSize; j++) {
+          array.push(this.data.array[index + j]);
+        }
+      }
+      return {
+        itemSize: this.itemSize,
+        type: this.array.constructor.name,
+        array,
+        normalized: this.normalized
+      };
+    } else {
+      if (data.interleavedBuffers === void 0) {
+        data.interleavedBuffers = {};
+      }
+      if (data.interleavedBuffers[this.data.uuid] === void 0) {
+        data.interleavedBuffers[this.data.uuid] = this.data.toJSON(data);
+      }
+      return {
+        isInterleavedBufferAttribute: true,
+        itemSize: this.itemSize,
+        data: this.data.uuid,
+        offset: this.offset,
+        normalized: this.normalized
+      };
+    }
+  }
+};
+var SpriteMaterial = class extends Material {
+  constructor(parameters) {
+    super();
+    this.isSpriteMaterial = true;
+    this.type = "SpriteMaterial";
+    this.color = new Color(16777215);
+    this.map = null;
+    this.alphaMap = null;
+    this.rotation = 0;
+    this.sizeAttenuation = true;
+    this.transparent = true;
+    this.fog = true;
+    this.setValues(parameters);
+  }
+  copy(source) {
+    super.copy(source);
+    this.color.copy(source.color);
+    this.map = source.map;
+    this.alphaMap = source.alphaMap;
+    this.rotation = source.rotation;
+    this.sizeAttenuation = source.sizeAttenuation;
+    this.fog = source.fog;
+    return this;
+  }
+};
+var _geometry;
+var _intersectPoint = /* @__PURE__ */ new Vector3();
+var _worldScale = /* @__PURE__ */ new Vector3();
+var _mvPosition = /* @__PURE__ */ new Vector3();
+var _alignedPosition = /* @__PURE__ */ new Vector2();
+var _rotatedPosition = /* @__PURE__ */ new Vector2();
+var _viewWorldMatrix = /* @__PURE__ */ new Matrix4();
+var _vA = /* @__PURE__ */ new Vector3();
+var _vB = /* @__PURE__ */ new Vector3();
+var _vC = /* @__PURE__ */ new Vector3();
+var _uvA = /* @__PURE__ */ new Vector2();
+var _uvB = /* @__PURE__ */ new Vector2();
+var _uvC = /* @__PURE__ */ new Vector2();
+var Sprite = class extends Object3D {
+  constructor(material = new SpriteMaterial()) {
+    super();
+    this.isSprite = true;
+    this.type = "Sprite";
+    if (_geometry === void 0) {
+      _geometry = new BufferGeometry();
+      const float32Array = new Float32Array([
+        -0.5,
+        -0.5,
+        0,
+        0,
+        0,
+        0.5,
+        -0.5,
+        0,
+        1,
+        0,
+        0.5,
+        0.5,
+        0,
+        1,
+        1,
+        -0.5,
+        0.5,
+        0,
+        0,
+        1
+      ]);
+      const interleavedBuffer = new InterleavedBuffer(float32Array, 5);
+      _geometry.setIndex([0, 1, 2, 0, 2, 3]);
+      _geometry.setAttribute("position", new InterleavedBufferAttribute(interleavedBuffer, 3, 0, false));
+      _geometry.setAttribute("uv", new InterleavedBufferAttribute(interleavedBuffer, 2, 3, false));
+    }
+    this.geometry = _geometry;
+    this.material = material;
+    this.center = new Vector2(0.5, 0.5);
+  }
+  raycast(raycaster, intersects) {
+    if (raycaster.camera === null) {
+      console.error('THREE.Sprite: "Raycaster.camera" needs to be set in order to raycast against sprites.');
+    }
+    _worldScale.setFromMatrixScale(this.matrixWorld);
+    _viewWorldMatrix.copy(raycaster.camera.matrixWorld);
+    this.modelViewMatrix.multiplyMatrices(raycaster.camera.matrixWorldInverse, this.matrixWorld);
+    _mvPosition.setFromMatrixPosition(this.modelViewMatrix);
+    if (raycaster.camera.isPerspectiveCamera && this.material.sizeAttenuation === false) {
+      _worldScale.multiplyScalar(-_mvPosition.z);
+    }
+    const rotation = this.material.rotation;
+    let sin, cos;
+    if (rotation !== 0) {
+      cos = Math.cos(rotation);
+      sin = Math.sin(rotation);
+    }
+    const center = this.center;
+    transformVertex(_vA.set(-0.5, -0.5, 0), _mvPosition, center, _worldScale, sin, cos);
+    transformVertex(_vB.set(0.5, -0.5, 0), _mvPosition, center, _worldScale, sin, cos);
+    transformVertex(_vC.set(0.5, 0.5, 0), _mvPosition, center, _worldScale, sin, cos);
+    _uvA.set(0, 0);
+    _uvB.set(1, 0);
+    _uvC.set(1, 1);
+    let intersect = raycaster.ray.intersectTriangle(_vA, _vB, _vC, false, _intersectPoint);
+    if (intersect === null) {
+      transformVertex(_vB.set(-0.5, 0.5, 0), _mvPosition, center, _worldScale, sin, cos);
+      _uvB.set(0, 1);
+      intersect = raycaster.ray.intersectTriangle(_vA, _vC, _vB, false, _intersectPoint);
+      if (intersect === null) {
+        return;
+      }
+    }
+    const distance = raycaster.ray.origin.distanceTo(_intersectPoint);
+    if (distance < raycaster.near || distance > raycaster.far) return;
+    intersects.push({
+      distance,
+      point: _intersectPoint.clone(),
+      uv: Triangle.getInterpolation(_intersectPoint, _vA, _vB, _vC, _uvA, _uvB, _uvC, new Vector2()),
+      face: null,
+      object: this
+    });
+  }
+  copy(source, recursive) {
+    super.copy(source, recursive);
+    if (source.center !== void 0) this.center.copy(source.center);
+    this.material = source.material;
+    return this;
+  }
+};
+function transformVertex(vertexPosition, mvPosition, center, scale, sin, cos) {
+  _alignedPosition.subVectors(vertexPosition, center).addScalar(0.5).multiply(scale);
+  if (sin !== void 0) {
+    _rotatedPosition.x = cos * _alignedPosition.x - sin * _alignedPosition.y;
+    _rotatedPosition.y = sin * _alignedPosition.x + cos * _alignedPosition.y;
+  } else {
+    _rotatedPosition.copy(_alignedPosition);
+  }
+  vertexPosition.copy(mvPosition);
+  vertexPosition.x += _rotatedPosition.x;
+  vertexPosition.y += _rotatedPosition.y;
+  vertexPosition.applyMatrix4(_viewWorldMatrix);
+}
+var CanvasTexture = class extends Texture {
+  constructor(canvas, mapping, wrapS, wrapT, magFilter, minFilter, format, type, anisotropy) {
+    super(canvas, mapping, wrapS, wrapT, magFilter, minFilter, format, type, anisotropy);
+    this.isCanvasTexture = true;
+    this.needsUpdate = true;
+  }
+};
 var Curve = class {
   constructor() {
     this.type = "Curve";
@@ -20750,10 +21156,10 @@ var FullscreenTriangleGeometry = class extends BufferGeometry {
     this.setAttribute("uv", new Float32BufferAttribute([0, 2, 0, 0, 2, 0], 2));
   }
 };
-var _geometry = new FullscreenTriangleGeometry();
+var _geometry2 = new FullscreenTriangleGeometry();
 var FullScreenQuad = class {
   constructor(material) {
-    this._mesh = new Mesh(_geometry, material);
+    this._mesh = new Mesh(_geometry2, material);
   }
   dispose() {
     this._mesh.geometry.dispose();
@@ -21438,21 +21844,24 @@ var RoundedBoxGeometry = class extends BoxGeometry {
   }
 };
 
-// src/EnchartixCore.js
+// src/utils/colorHarmony.ts
 var getHSL = (hex) => {
-  let c = hex.substring(1).split("");
-  if (c.length === 3) c = [c[0], c[0], c[1], c[1], c[2], c[2]];
-  c = "0x" + c.join("");
-  let r = c >> 16 & 255, g = c >> 8 & 255, b = c & 255;
-  r /= 255;
-  g /= 255;
-  b /= 255;
-  let max = Math.max(r, g, b), min = Math.min(r, g, b);
-  let h, s, l = (max + min) / 2;
-  if (max === min) {
-    h = s = 0;
-  } else {
-    let d = max - min;
+  const raw = hex.startsWith("#") ? hex.substring(1) : hex;
+  let chars = raw.split("");
+  if (chars.length === 3) {
+    chars = [chars[0], chars[0], chars[1], chars[1], chars[2], chars[2]];
+  }
+  const num = parseInt(chars.join(""), 16);
+  let r = (num >> 16 & 255) / 255;
+  let g = (num >> 8 & 255) / 255;
+  let b = (num & 255) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
     s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
     switch (max) {
       case r:
@@ -21486,9 +21895,11 @@ var generateThemeColors = (hex, isDark) => {
   return { bgStr, secStr };
 };
 var hexToOKLCH = (hex) => {
-  let r = parseInt(hex.substring(1, 3), 16) / 255;
-  let g = parseInt(hex.substring(3, 5), 16) / 255;
-  let b = parseInt(hex.substring(5, 7), 16) / 255;
+  const cleanHex = hex.startsWith("#") ? hex.substring(1) : hex;
+  const fullHex = cleanHex.length === 3 ? cleanHex.split("").map((ch) => ch + ch).join("") : cleanHex;
+  let r = parseInt(fullHex.substring(0, 2), 16) / 255;
+  let g = parseInt(fullHex.substring(2, 4), 16) / 255;
+  let b = parseInt(fullHex.substring(4, 6), 16) / 255;
   const lin = (c) => c > 0.04045 ? Math.pow((c + 0.055) / 1.055, 2.4) : c / 12.92;
   r = lin(r);
   g = lin(g);
@@ -21497,7 +21908,7 @@ var hexToOKLCH = (hex) => {
     0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b,
     0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b,
     0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b
-  ].map(Math.cbrt);
+  ].map((val) => Math.cbrt(val));
   const L = 0.2104542553 * lms[0] + 0.793617785 * lms[1] - 0.0040720468 * lms[2];
   const a = 1.9779984951 * lms[0] - 2.428592205 * lms[1] + 0.4505937099 * lms[2];
   const b_ = 0.0259040371 * lms[0] + 0.7827717662 * lms[1] - 0.808675766 * lms[2];
@@ -21510,14 +21921,16 @@ var hexToOKLCH = (hex) => {
 var oklchToHex = (L, C, h) => {
   let actualC = C;
   const hRad = h * Math.PI / 180;
-  let rgb;
+  let rgb = [0, 0, 0];
   for (let i = 0; i < 10; i++) {
     const a = actualC * Math.cos(hRad);
     const b = actualC * Math.sin(hRad);
     const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
     const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
     const s_ = L - 0.0894841775 * a - 1.291485548 * b;
-    const l3 = l_ * l_ * l_, m3 = m_ * m_ * m_, s3 = s_ * s_ * s_;
+    const l3 = l_ * l_ * l_;
+    const m3 = m_ * m_ * m_;
+    const s3 = s_ * s_ * s_;
     const r = 4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
     const g = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
     const b_r = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3;
@@ -21531,11 +21944,11 @@ var oklchToHex = (L, C, h) => {
 };
 var generateAccentPalette = (hex, count) => {
   const userColor = hexToOKLCH(hex);
-  let palette = [];
+  const palette = [];
   const centerIndex = Math.floor(count / 2);
   const hueStep = 10;
   for (let i = 0; i < count; i++) {
-    let offset = (i - centerIndex) * hueStep;
+    const offset = (i - centerIndex) * hueStep;
     let newHue = (userColor.h - offset) % 360;
     if (newHue < 0) {
       newHue += 360;
@@ -21544,29 +21957,220 @@ var generateAccentPalette = (hex, count) => {
   }
   return palette;
 };
+
+// src/shaders/gridShaders.ts
+var HORIZONTAL_GRID_VERTEX_SHADER = `
+	varying vec3 vWorldPosition;
+	void main() {
+		vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+		vWorldPosition = worldPosition.xyz;
+		gl_Position = projectionMatrix * viewMatrix * worldPosition;
+	}
+`;
+var HORIZONTAL_GRID_FRAGMENT_SHADER = `
+	uniform vec3 color;
+	uniform vec2 focusPoint;
+	uniform float fadeRadius;
+	uniform float opacityMulti;
+	varying vec3 vWorldPosition;
+
+	void main() {
+		float dist = distance(vWorldPosition.xz, focusPoint);
+		float radialFade = 1.0 - smoothstep(0.0, fadeRadius, dist);
+		float coreGlow = pow(1.0 - smoothstep(0.0, fadeRadius * 0.55, dist), 2.2);
+
+		float ringWave = sin(dist * 0.08) * 0.5 + 0.5;
+		float subtleRings = smoothstep(0.92, 1.0, ringWave) * 0.12 * radialFade;
+
+		float alpha = (coreGlow * 0.28 + radialFade * 0.06 + subtleRings) * opacityMulti;
+		gl_FragColor = vec4(color, alpha);
+	}
+`;
+var VERTICAL_GRID_VERTEX_SHADER = `
+	varying vec2 vUv;
+	void main() {
+		vUv = uv;
+		gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);
+	}
+`;
+var VERTICAL_GRID_FRAGMENT_SHADER = `
+	uniform float fillProgress;
+	uniform float gridScaleX;
+	uniform float cellsPos;
+	uniform float cellsNeg;
+	uniform float zeroLineV;
+	uniform float topPadV;
+	uniform float bottomPadV;
+	uniform vec3 accentColor;
+	varying vec2 vUv;
+
+	void main() {
+		// Map vUv.y to independent positive (above zeroLineV) and negative (below zeroLineV) cell coordinates
+		float posSpanV = max(0.0001, (1.0 - topPadV) - zeroLineV);
+		float negSpanV = max(0.0001, zeroLineV - bottomPadV);
+
+		float relY = (vUv.y >= zeroLineV)
+			? ((vUv.y - zeroLineV) / posSpanV) * cellsPos
+			: ((vUv.y - zeroLineV) / negSpanV) * cellsNeg;
+
+		float relX = (vUv.x - 0.5) * gridScaleX;
+
+		// Screen-space derivatives (fwidth) guarantee razor-sharp 1px lines without stretching!
+		float fwX = max(fwidth(relX), 0.0001);
+		float fwY = max(fwidth(relY), 0.0001);
+
+		// Minor grid (every 1 cell)
+		vec2 minorDist = abs(fract(vec2(relX, relY) - 0.5) - 0.5);
+		float minorX = 1.0 - smoothstep(0.0, fwX * 1.25, minorDist.x);
+		float minorY = 1.0 - smoothstep(0.0, fwY * 1.25, minorDist.y);
+		float minorAlpha = max(minorX * 0.35, minorY * 0.65);
+
+		// Major grid (every 5 cells)
+		vec2 majorDist = abs(fract(vec2(relX, relY) / 5.0 - 0.5) - 0.5);
+		float majorX = 1.0 - smoothstep(0.0, (fwX / 5.0) * 1.6, majorDist.x);
+		float majorY = 1.0 - smoothstep(0.0, (fwY / 5.0) * 1.6, majorDist.y);
+		float majorAlpha = max(majorX * 0.55, majorY * 0.95);
+
+		// Exact Zero Baseline passing directly through the two day anchor nodes
+		float zeroDistPx = abs(vUv.y - zeroLineV) / max(fwidth(vUv.y), 0.00001);
+		float zeroLine = 1.0 - smoothstep(0.5, 2.2, zeroDistPx);
+
+		// Animated reveal from center
+		float distFromCenter = max(abs(vUv.x - 0.5), abs(vUv.y - 0.5));
+		float reveal = 1.0 - smoothstep(fillProgress * 0.55, fillProgress * 0.55 + 0.15, distFromCenter);
+
+		// Clean edge vignette
+		float edgeFadeX = smoothstep(0.0, 0.08, vUv.x) * smoothstep(1.0, 0.92, vUv.x);
+		float edgeFadeY = smoothstep(0.0, 0.04, vUv.y) * smoothstep(1.0, 0.96, vUv.y);
+		float envelope = reveal * edgeFadeX * edgeFadeY;
+
+		vec3 baseGridColor = mix(vec3(0.9), accentColor, 0.35);
+		vec3 finalColor = mix(baseGridColor, accentColor, zeroLine * 0.9);
+
+		float combinedAlpha = (minorAlpha * 0.16 + majorAlpha * 0.28 + zeroLine * 0.85) * envelope;
+		gl_FragColor = vec4(finalColor, combinedAlpha);
+	}
+`;
+
+// src/core/EnchartixGraph.ts
 var defaultLabels = {
   viewToggle2D: "2D Flat View",
   viewToggle3D: "3D Perspective",
-  tooltipDailyTotal: "Daily Total",
-  tooltipEntries: "Entries:",
-  tooltipCumulative: "Overall Progress:"
+  tooltipNoteTotal: "Entry Total",
+  tooltipDailyTotal: "Entry Total",
+  tooltipEntries: "Values:",
+  tooltipCumulative: "Cumulative:",
+  tooltipGridScale: "Grid Scale:"
 };
+function computeNiceAxis(maxAbsValue, targetMaxCells) {
+  if (maxAbsValue <= 0) {
+    return { step: 1, cells: targetMaxCells, ceil: targetMaxCells };
+  }
+  const rawStep = maxAbsValue / targetMaxCells;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const residual = rawStep / mag;
+  let niceFactor = 1;
+  if (residual > 5) niceFactor = 10;
+  else if (residual > 2.5) niceFactor = 5;
+  else if (residual > 2) niceFactor = 2.5;
+  else if (residual > 1) niceFactor = 2;
+  else niceFactor = 1;
+  const step = niceFactor * mag;
+  const cells = Math.max(1, Math.ceil(maxAbsValue / step));
+  return { step, cells, ceil: cells * step };
+}
+function computeNiceDayScale(values) {
+  if (values.length === 0) {
+    return {
+      step: 1,
+      maxCeil: 10,
+      minFloor: 0,
+      totalSpan: 10,
+      cellsPos: 10,
+      cellsNeg: 0,
+      totalCells: 10,
+      zeroRatio: 0
+    };
+  }
+  const maxVal = Math.max(0, ...values);
+  const minVal = Math.min(0, ...values);
+  const posAxis = computeNiceAxis(maxVal, 15);
+  const negAxis = minVal < 0 ? computeNiceAxis(Math.abs(minVal), 8) : { step: posAxis.step, cells: 0, ceil: 0 };
+  const cellsPos = maxVal > 0 ? posAxis.cells : 10;
+  const maxCeil = maxVal > 0 ? posAxis.ceil : 10;
+  const cellsNeg = minVal < 0 ? negAxis.cells : 0;
+  const minFloor = -negAxis.ceil;
+  const totalCells = Math.max(1, cellsPos + cellsNeg);
+  return {
+    step: posAxis.step,
+    maxCeil,
+    minFloor,
+    totalSpan: maxCeil + Math.abs(minFloor),
+    cellsPos,
+    cellsNeg,
+    totalCells,
+    zeroRatio: cellsNeg / totalCells
+  };
+}
+function hermite(p0, p1, m0, m1, t) {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  const h00 = 2 * t3 - 3 * t2 + 1;
+  const h10 = t3 - 2 * t2 + t;
+  const h01 = -2 * t3 + 3 * t2;
+  const h11 = t3 - t2;
+  return h00 * p0 + h10 * m0 + h01 * p1 + h11 * m1;
+}
 var EnchartixGraph = class {
   constructor(container, data, options = {}) {
-    this.container = container;
-    this.data = data;
-    this.themeColor = options.themeColor || "#7d33ff";
-    this.labels = { ...defaultLabels, ...options.labels || {} };
-    this.currentIsDark = options.isDark !== void 0 ? options.isDark : document.body.classList.contains("theme-dark") || document.documentElement.classList.contains("theme-dark");
     this.hitboxes = [];
+    this.parsedSeries = [];
+    this.pointSpritesBySeries = [];
     this.is2DMode = false;
+    this.isTooltipPinned = true;
     this.hoveredSegment = null;
     this.isTopDownView = false;
     this.isVisible = true;
     this.inactivityTimer = null;
+    this.animationFrameID = null;
     this.BOX_HEIGHT = 120;
-    this.currentBoxWidth = 250;
-    this.currentBoxDepth = this.data.length * 120;
+    this.MIN_EXPANDED_DAY_WIDTH = 64;
+    this.INACTIVITY_DELAY_MS = 6e4;
+    // 1 full minute of zero interaction
+    this.currentBoxWidth = 260;
+    // macOS Dock Magnification weights + Smooth-to-Sharp Focus Morph per series & day
+    this.hoveredDayBySeries = /* @__PURE__ */ new Map();
+    this.dayWeightsBySeries = [];
+    this.dayFocusMorphBySeries = [];
+    this.dirtySeries = /* @__PURE__ */ new Set();
+    this.isDockAnimating = false;
+    this.sharedSphereGeo = new SphereGeometry(1, 12, 12);
+    // Three.js Core
+    this.clientW = 100;
+    this.clientH = 100;
+    this.viewSize = 100;
+    this.maxDim = 50;
+    this.graphCenter = new Vector3();
+    this.pos3D = new Vector3();
+    this.pos2D = new Vector3();
+    this.raycaster = new Raycaster();
+    this.mouse = new Vector2();
+    var _a, _b, _c, _d, _e;
+    this.container = container;
+    this.data = data;
+    this.themeColor = (_a = options.themeColor) != null ? _a : "#7d33ff";
+    this.isTooltipPinned = ((_b = options.tooltipMode) != null ? _b : "pinned") === "pinned";
+    const mergedLabels = {
+      ...defaultLabels,
+      ...(_c = options.labels) != null ? _c : {}
+    };
+    if (((_d = options.labels) == null ? void 0 : _d.tooltipDailyTotal) && !((_e = options.labels) == null ? void 0 : _e.tooltipNoteTotal)) {
+      mergedLabels.tooltipNoteTotal = options.labels.tooltipDailyTotal;
+    }
+    this.labels = mergedLabels;
+    const doc = activeDocument;
+    this.currentIsDark = options.isDark !== void 0 ? options.isDark : doc.body.classList.contains("theme-dark") || doc.documentElement.classList.contains("theme-dark");
+    this.currentBoxDepth = Math.max(1, this.data.length) * 125;
     this.transition = {
       active: false,
       startTime: 0,
@@ -21577,42 +22181,48 @@ var EnchartixGraph = class {
       endTarget: new Vector3(),
       startQuat: new Quaternion(),
       endQuat: new Quaternion(),
-      startWidth: 250,
-      endWidth: 250,
+      startWidth: this.currentBoxWidth,
+      endWidth: this.currentBoxWidth,
       startDepth: this.currentBoxDepth,
       endDepth: this.currentBoxDepth
     };
+    this.animate = this.animate.bind(this);
     this.initDOM();
     this.initThreeJS();
     this.setupObservers();
   }
   initDOM() {
-    this.chartWrapper = document.createElement("div");
-    this.chartWrapper.className = "enchartix-wrapper";
-    this.uiOverlay = document.createElement("div");
-    this.uiOverlay.className = "enchartix-ui-overlay";
-    this.toggleBtn = document.createElement("button");
-    this.toggleBtn.innerText = this.labels.viewToggle2D;
-    this.toggleBtn.className = "enchartix-toggle-btn";
-    this.toggleBtn.onclick = () => this.toggleViewMode();
-    this.uiOverlay.appendChild(this.toggleBtn);
-    this.tooltip = document.createElement("div");
-    this.tooltip.className = "enchartix-tooltip";
-    const ttTitle = document.createElement("div");
-    ttTitle.id = "tt-title";
-    ttTitle.className = "enchartix-tooltip-title";
-    ttTitle.setCssProps({
+    var _a, _b;
+    this.chartWrapper = this.container.createDiv({ cls: "enchartix-wrapper" });
+    this.uiOverlay = this.chartWrapper.createDiv({ cls: "enchartix-ui-overlay" });
+    this.toggleBtn = this.uiOverlay.createEl("button", {
+      cls: "enchartix-toggle-btn",
+      text: this.labels.viewToggle2D
+    });
+    this.toggleBtn.addEventListener("click", () => this.toggleViewMode());
+    this.pinTooltipBtn = this.uiOverlay.createEl("button", {
+      cls: "enchartix-toggle-btn",
+      text: this.isTooltipPinned ? (_a = this.labels.tooltipModePinned) != null ? _a : "\u{1F4CC} Info: Pinned Top" : (_b = this.labels.tooltipModeFloating) != null ? _b : "\u{1F4AC} Info: Floating"
+    });
+    this.pinTooltipBtn.addEventListener("click", () => {
+      var _a2, _b2;
+      this.isTooltipPinned = !this.isTooltipPinned;
+      this.pinTooltipBtn.textContent = this.isTooltipPinned ? (_a2 = this.labels.tooltipModePinned) != null ? _a2 : "\u{1F4CC} Info: Pinned Top" : (_b2 = this.labels.tooltipModeFloating) != null ? _b2 : "\u{1F4AC} Info: Floating";
+      this.tooltip.classList.toggle("is-pinned", this.isTooltipPinned);
+      if (this.isTooltipPinned) {
+        this.tooltip.setCssProps({ top: "16px", right: "16px", left: "auto" });
+      }
+    });
+    this.tooltip = this.chartWrapper.createDiv({ cls: "enchartix-tooltip" });
+    this.tooltip.classList.toggle("is-pinned", this.isTooltipPinned);
+    this.ttTitle = this.tooltip.createDiv({ cls: "enchartix-tooltip-title" });
+    this.ttTitle.id = "tt-title";
+    this.ttTitle.setCssProps({
       color: this.themeColor,
       "border-bottom-color": `${this.themeColor}44`
     });
-    const ttDataContainer = document.createElement("div");
-    ttDataContainer.id = "tt-data";
-    ttDataContainer.className = "enchartix-tooltip-data";
-    this.tooltip.appendChild(ttTitle);
-    this.tooltip.appendChild(ttDataContainer);
-    this.chartWrapper.appendChild(this.uiOverlay);
-    this.chartWrapper.appendChild(this.tooltip);
-    this.container.appendChild(this.chartWrapper);
+    this.ttDataContainer = this.tooltip.createDiv({ cls: "enchartix-tooltip-data" });
+    this.ttDataContainer.id = "tt-data";
     this.updateDOMTheme(this.currentIsDark);
   }
   updateDOMTheme(isDark) {
@@ -21627,8 +22237,13 @@ var EnchartixGraph = class {
       border: `1px solid ${this.themeColor}`,
       color: isDark ? this.themeColor : "#222"
     });
+    this.pinTooltipBtn.setCssProps({
+      background: isDark ? `${this.themeColor}22` : `${this.themeColor}15`,
+      border: `1px solid ${this.themeColor}`,
+      color: isDark ? this.themeColor : "#222"
+    });
     this.tooltip.setCssProps({
-      background: isDark ? "rgba(10, 10, 20, 0.85)" : "rgba(255, 255, 255, 0.9)",
+      background: isDark ? "rgba(10, 10, 20, 0.88)" : "rgba(255, 255, 255, 0.92)",
       color: isDark ? "#fff" : "#222",
       "box-shadow": isDark ? "0 4px 15px rgba(0, 0, 0, 0.5)" : "0 4px 15px rgba(0, 0, 0, 0.1)"
     });
@@ -21644,7 +22259,7 @@ var EnchartixGraph = class {
       alpha: true,
       powerPreference: "high-performance"
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(activeWindow.devicePixelRatio || 1, 2));
     this.renderer.setSize(this.clientW, this.clientH);
     this.chartWrapper.appendChild(this.renderer.domElement);
     this.buildDataStructure();
@@ -21653,25 +22268,25 @@ var EnchartixGraph = class {
     const graphSize = graphBox.getSize(new Vector3());
     this.maxDim = Math.max(graphSize.x, graphSize.y, graphSize.z, 50);
     this.buildGrids();
-    this.viewSize = this.maxDim * 1.2;
-    let aspect2 = this.clientW / this.clientH;
+    this.viewSize = this.maxDim * 1.25;
+    const aspect2 = this.clientW / this.clientH;
     this.camera = new OrthographicCamera(
       this.viewSize * aspect2 / -2,
       this.viewSize * aspect2 / 2,
       this.viewSize / 2,
       this.viewSize / -2,
-      -this.maxDim * 3,
-      this.maxDim * 3
+      -this.maxDim * 4,
+      this.maxDim * 4
     );
     this.pos3D = new Vector3(
-      this.graphCenter.x - this.maxDim * 0.5,
-      this.graphCenter.y + this.maxDim * 0.4,
-      this.graphCenter.z + this.maxDim * 0.8
+      this.graphCenter.x - this.maxDim * 0.48,
+      this.graphCenter.y + this.maxDim * 0.42,
+      this.graphCenter.z + this.maxDim * 0.82
     );
     this.pos2D = new Vector3(
       this.graphCenter.x,
-      this.graphCenter.y + this.maxDim,
-      this.graphCenter.z + 1
+      this.graphCenter.y + this.maxDim * 1.2,
+      this.graphCenter.z + 0.01
     );
     this.camera.position.copy(this.pos3D);
     this.camera.zoom = 1;
@@ -21681,7 +22296,7 @@ var EnchartixGraph = class {
     this.controls.dampingFactor = 0.05;
     this.controls.target.copy(this.graphCenter);
     this.controls.minZoom = 0.3;
-    this.controls.maxZoom = 4;
+    this.controls.maxZoom = 5;
     this.controls.mouseButtons = {
       LEFT: MOUSE.ROTATE,
       MIDDLE: MOUSE.DOLLY,
@@ -21694,41 +22309,114 @@ var EnchartixGraph = class {
     const renderPass = new RenderPass(this.scene, this.camera);
     this.bloomPass = new UnrealBloomPass(
       new Vector2(this.clientW, this.clientH),
-      1.5,
+      1.4,
       0.4,
       0.1
     );
-    this.composer = new EffectComposer(this.renderer);
+    const renderTarget = new WebGLRenderTarget(this.clientW, this.clientH, {
+      samples: 4,
+      type: HalfFloatType
+    });
+    this.composer = new EffectComposer(this.renderer, renderTarget);
     this.composer.addPass(renderPass);
     this.composer.addPass(this.bloomPass);
     this.updateThreeTheme(this.currentIsDark);
     this.setupInteractions();
-    this.animate = this.animate.bind(this);
     this.animate();
   }
+  /**
+   * Creates a crisp 3D billboard text sprite anchored at its bottom-right corner (1, 0)
+   * so it always faces the camera while pivoting around the exact graph vertex!
+   */
+  createValueSprite(val, accentHex) {
+    const canvas = createEl("canvas");
+    canvas.width = 256;
+    canvas.height = 96;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      const text = val > 0 ? `+${val}` : String(val);
+      ctx.font = "bold 64px system-ui, -apple-system, sans-serif";
+      const metrics = ctx.measureText(text);
+      const textW = metrics.width;
+      const padX = 16;
+      const boxW = Math.min(248, textW + padX * 2);
+      const boxH = 62;
+      const boxX = 248 - boxW;
+      const boxY = 86 - boxH;
+      ctx.fillStyle = "rgba(10, 10, 20, 0.82)";
+      ctx.strokeStyle = val < 0 ? "#ff6b81" : accentHex;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.roundRect(boxX, boxY, boxW, boxH, 12);
+      ctx.fill();
+      ctx.stroke();
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(text, 248 - padX, boxY + boxH / 2 + 2);
+    }
+    const texture = new CanvasTexture(canvas);
+    texture.minFilter = LinearFilter;
+    texture.magFilter = LinearFilter;
+    const material = new SpriteMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 0,
+      depthTest: false,
+      depthWrite: false
+    });
+    const sprite = new Sprite(material);
+    sprite.center.set(1, 0);
+    sprite.scale.set(24, 9, 1);
+    sprite.renderOrder = 999;
+    this.graphGroup.add(sprite);
+    return sprite;
+  }
   buildDataStructure() {
-    const accentPalette = generateAccentPalette(
-      this.themeColor,
-      this.data.length
-    );
+    const accentPalette = generateAccentPalette(this.themeColor, this.data.length);
     const exerciseStats = this.data.map((series) => {
-      let maxCumulative = 1e-4, maxSet = 1e-4, currentCumulative = 0;
+      let maxCumulative = 1e-4;
+      let minCumulative = 0;
+      let currentCumulative = 0;
+      let globalMaxPosSet = 1e-4;
+      let globalMaxNegSet = 1e-4;
       const maxDays = Math.max(1, series.entries.length - 1);
       series.entries.forEach((d, i) => {
+        var _a, _b;
         if (i === 0) return;
-        d.sets.forEach((setVal) => {
+        const vals = (_b = (_a = d.values) != null ? _a : d.sets) != null ? _b : [];
+        vals.forEach((setVal) => {
           currentCumulative += setVal;
-          maxSet = Math.max(maxSet, setVal);
+          maxCumulative = Math.max(maxCumulative, currentCumulative);
+          minCumulative = Math.min(minCumulative, currentCumulative);
+          if (setVal >= 0) {
+            globalMaxPosSet = Math.max(globalMaxPosSet, setVal);
+          } else {
+            globalMaxNegSet = Math.max(globalMaxNegSet, Math.abs(setVal));
+          }
         });
-        maxCumulative = Math.max(maxCumulative, currentCumulative);
       });
-      return { maxCumulative, maxSet, maxDays };
+      return {
+        maxCumulative,
+        minCumulative,
+        maxDays,
+        globalMaxPosSet,
+        globalMaxNegSet
+      };
     });
     this.parsedSeries = [];
+    this.pointSpritesBySeries = [];
+    this.dayWeightsBySeries = [];
+    this.dayFocusMorphBySeries = [];
     this.data.forEach((series, exIndex) => {
+      var _a;
       const stats = exerciseStats[exIndex];
-      const accentStr = accentPalette[exIndex];
+      const accentStr = (_a = accentPalette[exIndex]) != null ? _a : this.themeColor;
       const accentNum = new Color(accentStr).getHex();
+      const numDays = Math.max(1, series.entries.length - 1);
+      this.dayWeightsBySeries.push(new Array(numDays).fill(1));
+      this.dayFocusMorphBySeries.push(new Array(numDays).fill(0));
+      const seriesSprites = [];
       const seriesObj = {
         name: series.name,
         colorNum: accentNum,
@@ -21745,37 +22433,60 @@ var EnchartixGraph = class {
         frac: 0,
         cumulative: 0,
         setVal: 0,
-        zDir: 0,
+        globalNormZ: 0,
+        localNormZ: 0,
         isNode: true
       });
       seriesObj.meshes.spheres.push(
         this.createPointMesh(accentNum, 1.5, series.name)
       );
+      seriesSprites.push(null);
       globalPtIdx++;
       series.entries.forEach((d, dayIndex) => {
+        var _a2, _b, _c, _d;
         if (dayIndex === 0) return;
-        const sets = d.sets;
-        const numSets = sets.length;
+        const rawSets = (_b = (_a2 = d.values) != null ? _a2 : d.sets) != null ? _b : [];
+        const numSets = rawSets.length;
+        const scaleInfo = computeNiceDayScale(rawSets);
         const dayPointsIdx = [globalPtIdx - 1];
-        sets.forEach((setVal, index) => {
-          cumulative += setVal;
-          const frac = (index + 1) / numSets;
-          const isNode = numSets === 1 || index === numSets - 1;
-          const zDir = index % 2 === 0 ? 1 : -1;
+        if (numSets > 0) {
+          rawSets.forEach((setVal, index) => {
+            cumulative += setVal;
+            const frac = numSets === 1 ? 0.5 : 0.16 + index / (numSets - 1) * 0.68;
+            const globalNormZ = setVal >= 0 ? setVal / stats.globalMaxPosSet : -(Math.abs(setVal) / stats.globalMaxNegSet);
+            const localNormZ = setVal >= 0 ? scaleInfo.maxCeil > 0 ? setVal / scaleInfo.maxCeil : 0 : scaleInfo.minFloor < 0 ? setVal / Math.abs(scaleInfo.minFloor) : 0;
+            seriesObj.pointsData.push({
+              dayIndex,
+              frac,
+              cumulative,
+              setVal,
+              globalNormZ,
+              localNormZ,
+              isNode: false
+            });
+            seriesObj.meshes.spheres.push(
+              this.createPointMesh(accentNum, 0.9, series.name)
+            );
+            seriesSprites.push(null);
+            dayPointsIdx.push(globalPtIdx);
+            globalPtIdx++;
+          });
           seriesObj.pointsData.push({
             dayIndex,
-            frac,
+            frac: 1,
             cumulative,
-            setVal,
-            zDir,
-            isNode
+            setVal: 0,
+            globalNormZ: 0,
+            localNormZ: 0,
+            isNode: true
           });
           seriesObj.meshes.spheres.push(
-            this.createPointMesh(accentNum, isNode ? 1.5 : 0.8, series.name)
+            this.createPointMesh(accentNum, 1.5, series.name)
           );
+          seriesSprites.push(null);
           dayPointsIdx.push(globalPtIdx);
           globalPtIdx++;
-        });
+        }
         if (dayPointsIdx.length > 1) {
           const hitboxMesh = new Mesh(
             new BoxGeometry(1, 1, 1),
@@ -21789,19 +22500,29 @@ var EnchartixGraph = class {
               blending: NormalBlending
             })
           );
-          hitboxMesh.userData = {
+          const rawNote = ((_d = (_c = d.note) != null ? _c : d.notes) != null ? _d : "").trim();
+          const truncatedNote = rawNote.length > 256 ? `${rawNote.slice(0, 256)}\u2026` : rawNote;
+          const userData = {
             exercise: series.name,
+            seriesIndex: exIndex,
+            dayIndex,
             date: d.date,
-            sets,
-            dayTotal: sets.reduce((a, b) => a + b, 0),
+            sets: rawSets,
+            dayTotal: rawSets.reduce((a, b) => a + b, 0),
             total: cumulative,
-            color: accentStr
+            color: accentStr,
+            scaleInfo,
+            note: truncatedNote || void 0,
+            file: d.file
           };
+          hitboxMesh.userData = userData;
           this.graphGroup.add(hitboxMesh);
           this.hitboxes.push(hitboxMesh);
           seriesObj.daysData.push({
+            dayIndex,
             mesh: hitboxMesh,
-            pointIndices: dayPointsIdx
+            pointIndices: dayPointsIdx,
+            scaleInfo
           });
         }
       });
@@ -21811,130 +22532,287 @@ var EnchartixGraph = class {
           new MeshBasicMaterial({
             vertexColors: true,
             transparent: true,
-            opacity: 0.8
+            opacity: 0.9
           })
         );
-        tube.userData = {
+        const tubeUserData = {
           exercise: series.name,
           isDataElement: true,
-          baseOpacity: 0.8,
-          targetOpacity: 0.8
+          baseOpacity: 0.9,
+          targetOpacity: 0.9
         };
+        tube.userData = tubeUserData;
         this.graphGroup.add(tube);
         seriesObj.meshes.tube = tube;
       }
       this.parsedSeries.push(seriesObj);
+      this.pointSpritesBySeries.push(seriesSprites);
     });
     this.applyLayout(this.currentBoxWidth, this.currentBoxDepth, true);
   }
   createPointMesh(color, size, exName) {
-    const geometry = new SphereGeometry(size, 16, 16);
     const material = new MeshBasicMaterial({
       color,
       transparent: true,
       opacity: 1
     });
-    const mesh = new Mesh(geometry, material);
-    mesh.userData = {
+    const mesh = new Mesh(this.sharedSphereGeo, material);
+    mesh.scale.set(size, size, size);
+    const userData = {
       exercise: exName,
       isDataElement: true,
       baseOpacity: 1,
-      targetOpacity: 1
+      targetOpacity: 1,
+      baseRadius: size
     };
+    mesh.userData = userData;
     this.graphGroup.add(mesh);
     return mesh;
   }
-  applyLayout(boxWidth, boxDepth, rebuildHitboxes = false) {
-    const EXERCISE_DEPTH = boxDepth / this.parsedSeries.length;
-    const Z_PADDING = 0.9;
+  buildHybridMorphTubeGeometry(controlPts, pointDayIndices, dayFocusMorphs, radius, colorTopHex) {
+    var _a, _b;
+    const n = controlPts.length;
+    const mY = new Array(n).fill(0);
+    const mZ = new Array(n).fill(0);
+    for (let i = 0; i < n; i++) {
+      const prev = controlPts[Math.max(0, i - 1)];
+      const curr = controlPts[i];
+      const next = controlPts[Math.min(n - 1, i + 1)];
+      mY[i] = (next.y - prev.y) * 0.5;
+      const isExtremum = (curr.z - prev.z) * (next.z - curr.z) <= 0;
+      mZ[i] = isExtremum ? 0 : (next.z - prev.z) * 0.38;
+    }
+    const sampledPoints = [];
+    const baseSubdiv = n > 150 ? 3 : n > 60 ? 5 : 8;
+    for (let i = 0; i < n - 1; i++) {
+      const p0 = controlPts[i];
+      const p1 = controlPts[i + 1];
+      const dayIdx = (_a = pointDayIndices[i + 1]) != null ? _a : 1;
+      const sharpMorph = (_b = dayFocusMorphs[Math.max(0, dayIdx - 1)]) != null ? _b : 0;
+      const localSubdiv = sharpMorph > 0.98 ? 2 : baseSubdiv;
+      const steps = i === n - 2 ? localSubdiv : localSubdiv - 1;
+      for (let s = 0; s <= steps; s++) {
+        const t = s / localSubdiv;
+        const x = p0.x + (p1.x - p0.x) * t;
+        const y = hermite(p0.y, p1.y, mY[i], mY[i + 1], t);
+        const zSmooth = hermite(p0.z, p1.z, mZ[i], mZ[i + 1], t);
+        const zSharp = p0.z + (p1.z - p0.z) * t;
+        const z = zSmooth + (zSharp - zSmooth) * sharpMorph;
+        sampledPoints.push(new Vector3(x, y, z));
+      }
+    }
+    const dedupedPoints = [];
+    for (let i = 0; i < sampledPoints.length; i++) {
+      const pt = sampledPoints[i];
+      const prev = dedupedPoints[dedupedPoints.length - 1];
+      if (!prev || prev.distanceToSquared(pt) > 1e-4) {
+        dedupedPoints.push(pt);
+      }
+    }
+    const smoothJointCurve = new CatmullRomCurve3(
+      dedupedPoints,
+      false,
+      "centripetal",
+      0.02
+    );
+    const radialSegs = n > 150 ? 8 : 10;
+    const tubeGeo = new TubeGeometry(
+      smoothJointCurve,
+      Math.max(dedupedPoints.length, 64),
+      radius,
+      radialSegs,
+      false
+    );
+    const posAttribute = tubeGeo.attributes.position;
+    const count = posAttribute.count;
+    const colorsArr = new Float32Array(count * 3);
+    const bgColor = this.scene && this.scene.background instanceof Color ? this.scene.background : new Color(0);
+    const colorBottom = bgColor.clone();
+    const colorTop = new Color(colorTopHex);
+    for (let i = 0; i < count; i++) {
+      const y = posAttribute.getY(i);
+      const factor = Math.max(
+        0.15,
+        Math.min(1, (y + this.BOX_HEIGHT / 2) / this.BOX_HEIGHT)
+      );
+      const c = colorBottom.clone().lerp(colorTop, factor);
+      colorsArr[i * 3] = c.r;
+      colorsArr[i * 3 + 1] = c.g;
+      colorsArr[i * 3 + 2] = c.b;
+    }
+    tubeGeo.setAttribute("color", new BufferAttribute(colorsArr, 3));
+    return tubeGeo;
+  }
+  applyLayout(boxWidth, boxDepth, rebuildHitboxes = false, onlyDirty = false) {
+    const seriesCount = Math.max(1, this.parsedSeries.length);
+    const LANE_DEPTH = boxDepth / seriesCount;
+    const USABLE_LANE_DEPTH = LANE_DEPTH * 0.78;
+    const Z_PAD = 6;
     this.parsedSeries.forEach((series, exIndex) => {
+      var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j;
+      if (onlyDirty && !this.dirtySeries.has(exIndex)) return;
       const stats = series.stats;
-      const baseZ = -boxDepth / 2 + (exIndex + 0.5) * EXERCISE_DEPTH;
-      const maxDeviationZ = EXERCISE_DEPTH / 2 * Z_PADDING;
+      const laneCenterZ = -boxDepth / 2 + (exIndex + 0.5) * LANE_DEPTH;
+      const baseZ = laneCenterZ + USABLE_LANE_DEPTH * 0.34;
+      const maxPositiveReach = USABLE_LANE_DEPTH * 0.72;
+      const maxNegativeReach = USABLE_LANE_DEPTH * 0.38;
+      const weights = (_a = this.dayWeightsBySeries[exIndex]) != null ? _a : [1];
+      const focusMorphs = (_b = this.dayFocusMorphBySeries[exIndex]) != null ? _b : [0];
+      const sprites = (_c = this.pointSpritesBySeries[exIndex]) != null ? _c : [];
+      const hoveredDay = (_d = this.hoveredDayBySeries.get(exIndex)) != null ? _d : -1;
+      const nDays = weights.length;
+      const dayStartX = new Array(nDays + 1).fill(-boxWidth / 2);
+      if (hoveredDay > 0 && nDays > 1) {
+        const hIdx = hoveredDay - 1;
+        const naturalCenterRatio = (hIdx + 0.5) / nDays;
+        const totalW = weights.reduce((acc, w) => acc + w, 0) || 1;
+        const hoveredWidthRatio = Math.min(0.38, ((_e = weights[hIdx]) != null ? _e : 1) / totalW);
+        const halfW = hoveredWidthRatio * 0.5;
+        const pinnedCenter = Math.max(halfW, Math.min(1 - halfW, naturalCenterRatio));
+        const hLeftRatio = pinnedCenter - halfW;
+        const hRightRatio = pinnedCenter + halfW;
+        let leftWeightSum = 0;
+        for (let d = 0; d < hIdx; d++) leftWeightSum += (_f = weights[d]) != null ? _f : 1;
+        let accumLeft = 0;
+        for (let d = 0; d < hIdx; d++) {
+          dayStartX[d] = -boxWidth / 2 + accumLeft / (leftWeightSum || 1) * hLeftRatio * boxWidth;
+          accumLeft += (_g = weights[d]) != null ? _g : 1;
+        }
+        dayStartX[hIdx] = -boxWidth / 2 + hLeftRatio * boxWidth;
+        dayStartX[hIdx + 1] = -boxWidth / 2 + hRightRatio * boxWidth;
+        let rightWeightSum = 0;
+        for (let d = hIdx + 1; d < nDays; d++) rightWeightSum += (_h = weights[d]) != null ? _h : 1;
+        let accumRight = 0;
+        const rightSpanRatio = 1 - hRightRatio;
+        for (let d = hIdx + 1; d < nDays; d++) {
+          accumRight += (_i = weights[d]) != null ? _i : 1;
+          dayStartX[d + 1] = -boxWidth / 2 + (hRightRatio + accumRight / (rightWeightSum || 1) * rightSpanRatio) * boxWidth;
+        }
+      } else {
+        const totalWeight = weights.reduce((acc, w) => acc + w, 0) || 1;
+        let accumW = 0;
+        for (let d = 0; d < nDays; d++) {
+          accumW += (_j = weights[d]) != null ? _j : 1;
+          dayStartX[d + 1] = -boxWidth / 2 + accumW / totalWeight * boxWidth;
+        }
+      }
       const mapX = (dayIndex, frac) => {
-        const pos = dayIndex === 0 ? 0 : dayIndex - 1 + frac;
-        return -boxWidth / 2 + pos / stats.maxDays * boxWidth;
+        var _a2, _b2;
+        if (dayIndex === 0) return -boxWidth / 2;
+        const dIdx = Math.min(Math.max(1, dayIndex), weights.length) - 1;
+        const x0 = (_a2 = dayStartX[dIdx]) != null ? _a2 : -boxWidth / 2;
+        const x1 = (_b2 = dayStartX[dIdx + 1]) != null ? _b2 : boxWidth / 2;
+        return x0 + frac * (x1 - x0);
       };
-      const mapY = (val) => -this.BOX_HEIGHT / 2 + val / stats.maxCumulative * this.BOX_HEIGHT;
-      const mapZ = (val, zDir) => baseZ + val / stats.maxSet * maxDeviationZ * zDir;
+      const spanY = Math.max(1e-4, stats.maxCumulative - stats.minCumulative);
+      const mapY = (val) => -this.BOX_HEIGHT / 2 + (val - stats.minCumulative) / spanY * this.BOX_HEIGHT;
+      const mapZ = (normZ) => {
+        if (normZ >= 0) {
+          return baseZ - normZ * maxPositiveReach;
+        }
+        return baseZ - normZ * maxNegativeReach;
+      };
       const curvePoints = [];
+      const pointDayIndices = [];
+      const baseNodeScale = stats.maxDays > 30 ? Math.max(0.45, 25 / stats.maxDays) : 1;
       series.pointsData.forEach((pt, i) => {
+        var _a2, _b2;
         const x = mapX(pt.dayIndex, pt.frac);
         const y = mapY(pt.cumulative);
-        const z = pt.isNode ? baseZ : mapZ(pt.setVal, pt.zDir);
+        const morph = pt.dayIndex > 0 ? (_a2 = focusMorphs[pt.dayIndex - 1]) != null ? _a2 : 0 : 0;
+        const effectiveNormZ = pt.globalNormZ + (pt.localNormZ - pt.globalNormZ) * morph;
+        const z = pt.isNode ? baseZ : mapZ(effectiveNormZ);
         const pos = new Vector3(x, y, z);
         curvePoints.push(pos);
-        series.meshes.spheres[i].position.copy(pos);
+        pointDayIndices.push(pt.dayIndex);
+        const sphere = series.meshes.spheres[i];
+        if (sphere) {
+          sphere.position.copy(pos);
+          const baseR = (_b2 = sphere.userData.baseRadius) != null ? _b2 : pt.isNode ? 1.5 : 0.9;
+          const isHoveredDay = pt.dayIndex === hoveredDay;
+          const subScale = pt.isNode ? (isHoveredDay ? 1.15 : baseNodeScale) * baseR : baseNodeScale * (0.65 + 0.55 * morph) * baseR;
+          sphere.scale.set(subScale, subScale, subScale);
+        }
+        if (!pt.isNode && morph > 0.02) {
+          let sprite = sprites[i];
+          if (!sprite) {
+            sprite = this.createValueSprite(pt.setVal, series.colorStr);
+            sprites[i] = sprite;
+          }
+          sprite.position.set(pos.x, pos.y + 0.8, pos.z);
+          sprite.material.opacity = Math.pow(morph, 1.5);
+          sprite.visible = true;
+          const zoomScale = this.viewSize / 320 / (this.camera ? Math.max(0.35, this.camera.zoom) : 1);
+          sprite.scale.set(26 * zoomScale, 9.75 * zoomScale, 1);
+          sprite.position.set(pos.x, pos.y + 1.2 * zoomScale, pos.z);
+        } else {
+          const sprite = sprites[i];
+          if (sprite && sprite.visible) {
+            sprite.visible = false;
+          }
+        }
       });
       if (series.meshes.tube && curvePoints.length > 1) {
-        const curve = new CatmullRomCurve3(
+        const zoomFactor = this.camera ? Math.sqrt(Math.max(0.3, this.camera.zoom)) : 1;
+        const dynamicRadius = 0.55 / zoomFactor;
+        const tubeGeo = this.buildHybridMorphTubeGeometry(
           curvePoints,
-          false,
-          "centripetal",
-          0.5
+          pointDayIndices,
+          focusMorphs,
+          dynamicRadius,
+          series.colorNum
         );
-        const segmentCount = Math.min(
-          1e3,
-          Math.max(300, Math.floor(boxWidth * 1.5))
-        );
-        const tubeGeo = new TubeGeometry(
-          curve,
-          segmentCount,
-          0.3,
-          8,
-          false
-        );
-        const count = tubeGeo.attributes.position.count;
-        const colorsArr = new Float32Array(count * 3);
-        const colorBottom = new Color(
-          this.scene ? this.scene.background : 0
-        );
-        const colorTop = new Color(series.colorNum);
-        for (let i = 0; i < count; i++) {
-          const y = tubeGeo.attributes.position.getY(i);
-          const factor = Math.max(
-            0,
-            Math.min(1, (y + this.BOX_HEIGHT / 2) / this.BOX_HEIGHT)
-          );
-          const c = colorBottom.clone().lerp(colorTop, factor);
-          colorsArr[i * 3] = c.r;
-          colorsArr[i * 3 + 1] = c.g;
-          colorsArr[i * 3 + 2] = c.b;
-        }
-        tubeGeo.setAttribute("color", new BufferAttribute(colorsArr, 3));
         series.meshes.tube.geometry.dispose();
         series.meshes.tube.geometry = tubeGeo;
       }
-      if (rebuildHitboxes) {
-        series.daysData.forEach((dayData) => {
-          const boxPoints = dayData.pointIndices.map((idx) => curvePoints[idx]);
-          const box3 = new Box3().setFromPoints(boxPoints);
-          const size = box3.getSize(new Vector3());
-          const center = box3.getCenter(new Vector3());
-          size.x = Math.max(size.x, 8) + 16;
-          size.y = Math.max(size.y, 8) + 16;
-          size.z = Math.max(size.z, 24) + 16;
+      series.daysData.forEach((dayData) => {
+        var _a2, _b2;
+        const dIdx = dayData.dayIndex - 1;
+        const x0 = (_a2 = dayStartX[dIdx]) != null ? _a2 : -boxWidth / 2;
+        const x1 = (_b2 = dayStartX[dIdx + 1]) != null ? _b2 : boxWidth / 2;
+        const daySpanX = Math.max(2, x1 - x0);
+        const boxPoints = dayData.pointIndices.map((idx) => curvePoints[idx]).filter((pt) => pt !== void 0);
+        const box3 = new Box3().setFromPoints(boxPoints);
+        const size = box3.getSize(new Vector3());
+        const center = box3.getCenter(new Vector3());
+        const hasNeg = dayData.scaleInfo.cellsNeg > 0;
+        const zCeilWorld = baseZ - maxPositiveReach;
+        const zFloorWorld = hasNeg ? baseZ + maxNegativeReach : baseZ;
+        const zTopEdge = zCeilWorld - Z_PAD;
+        const zBottomEdge = zFloorWorld + Z_PAD;
+        const exactDepthZ = zBottomEdge - zTopEdge;
+        const exactCenterZ = (zTopEdge + zBottomEdge) / 2;
+        const widthX = Math.max(daySpanX, 4);
+        const heightY = Math.max(size.y, 12) + 16;
+        center.x = (x0 + x1) / 2;
+        center.z = exactCenterZ;
+        const exactZeroV = (zBottomEdge - baseZ) / exactDepthZ;
+        const exactTopPadV = Z_PAD / exactDepthZ;
+        const exactBottomPadV = Z_PAD / exactDepthZ;
+        const hbData = dayData.mesh.userData;
+        hbData.exactZeroV = exactZeroV;
+        hbData.exactTopPadV = exactTopPadV;
+        hbData.exactBottomPadV = exactBottomPadV;
+        if (rebuildHitboxes) {
           const segmentGeometry = new RoundedBoxGeometry(
-            size.x,
-            size.y,
-            size.z,
+            widthX,
+            heightY,
+            exactDepthZ,
             4,
-            8
+            6
           );
-          const darkerColor = new Color(series.colorNum).multiplyScalar(
-            0.1
-          );
+          const darkerColor = new Color(series.colorNum).multiplyScalar(0.15);
           const posAttr = segmentGeometry.attributes.position;
           const colorData = new Float32Array(posAttr.count * 4);
           for (let j = 0; j < posAttr.count; j++) {
             let alpha = 0;
             if (this.isTopDownView) {
               const localY = posAttr.getY(j);
-              const normalizedY = (1 - localY + size.y / 2) / size.y;
+              const normalizedY = (1 - localY + heightY / 2) / heightY;
               alpha = Math.pow(normalizedY, 5);
             } else {
               const localZ = posAttr.getZ(j);
-              const normalizedZ = (1 - localZ + size.z / 2) / size.z;
+              const normalizedZ = (1 - localZ + exactDepthZ / 2) / exactDepthZ;
               alpha = Math.pow(normalizedZ, 5);
             }
             colorData[j * 4] = darkerColor.r;
@@ -21948,91 +22826,60 @@ var EnchartixGraph = class {
           );
           dayData.mesh.geometry.dispose();
           dayData.mesh.geometry = segmentGeometry;
+          dayData.mesh.scale.set(1, 1, 1);
           dayData.mesh.position.copy(center);
-          dayData.mesh.userData.boxSize = { x: size.x, y: size.y, z: size.z };
-        });
-      }
+          hbData.boxSize = { x: widthX, y: heightY, z: exactDepthZ };
+        } else {
+          const origSize = hbData.boxSize;
+          if (origSize && origSize.x > 0) {
+            dayData.mesh.scale.set(widthX / origSize.x, 1, 1);
+          }
+          dayData.mesh.position.copy(center);
+        }
+      });
     });
+    if (this.hoveredSegment) {
+      this.updateGridOrientation();
+    }
   }
   buildGrids() {
-    const gridGeometry = new PlaneGeometry(
-      this.maxDim * 5,
-      this.maxDim * 5
-    );
+    const gridGeometry = new PlaneGeometry(this.maxDim * 5, this.maxDim * 5);
     gridGeometry.rotateX(-Math.PI / 2);
-    this.gridMaterial = new ShaderMaterial({
-      uniforms: {
-        color: { value: new Color() },
-        focusPoint: {
-          value: new Vector2(this.graphCenter.x, this.graphCenter.z)
-        },
-        fadeRadius: { value: this.maxDim * 0.9 },
-        gridScale: { value: 20 },
-        lineThickness: { value: 0.04 },
-        opacityMulti: { value: 0.5 }
+    this.gridUniforms = {
+      color: { value: new Color() },
+      focusPoint: {
+        value: new Vector2(this.graphCenter.x, this.graphCenter.z)
       },
-      vertexShader: `
-                varying vec3 vWorldPosition;
-                void main() {
-                    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-                    vWorldPosition = worldPosition.xyz;
-                    gl_Position = projectionMatrix * viewMatrix * worldPosition;
-                }
-            `,
-      fragmentShader: `
-                uniform vec3 color; uniform vec2 focusPoint; uniform float fadeRadius;
-                uniform float gridScale; uniform float lineThickness; uniform float opacityMulti;
-                varying vec3 vWorldPosition;
-                void main() {
-                    vec2 coord = vWorldPosition.xz / gridScale;
-                    vec2 grid = abs(fract(coord - 0.5) - 0.5);
-                    float lineX = smoothstep(lineThickness, 0.0, grid.x);
-                    float lineY = smoothstep(lineThickness, 0.0, grid.y);
-                    float lineAlpha = max(lineX, lineY);
-                    float dist = distance(vWorldPosition.xz, focusPoint);
-                    float fade = 1.0 - smoothstep(0.0, fadeRadius, dist);
-                    float coreGlow = 1.0 - smoothstep(0.0, fadeRadius * 0.3, dist);
-                    vec3 finalColor = mix(color * (opacityMulti), color, coreGlow);
-                    gl_FragColor = vec4(finalColor, lineAlpha * fade * opacityMulti);
-                }
-            `,
+      fadeRadius: { value: this.maxDim * 1.15 },
+      opacityMulti: { value: 0.6 }
+    };
+    this.gridMaterial = new ShaderMaterial({
+      uniforms: this.gridUniforms,
+      vertexShader: HORIZONTAL_GRID_VERTEX_SHADER,
+      fragmentShader: HORIZONTAL_GRID_FRAGMENT_SHADER,
       transparent: true,
       depthWrite: false,
       side: DoubleSide
     });
     const customGrid = new Mesh(gridGeometry, this.gridMaterial);
-    customGrid.position.y = -this.BOX_HEIGHT / 2 - 0.1;
+    customGrid.position.y = -this.BOX_HEIGHT / 2 - 0.5;
     this.graphGroup.add(customGrid);
     const vGridGeo = new PlaneGeometry(1, 1);
+    this.vGridUniforms = {
+      fillProgress: { value: 0 },
+      targetFill: { value: 0 },
+      gridScaleX: { value: 5 },
+      cellsPos: { value: 10 },
+      cellsNeg: { value: 0 },
+      zeroLineV: { value: 0.08 },
+      topPadV: { value: 0.05 },
+      bottomPadV: { value: 0.05 },
+      accentColor: { value: new Color(this.themeColor) }
+    };
     this.vGridMat = new ShaderMaterial({
-      uniforms: {
-        fillProgress: { value: 0 },
-        targetFill: { value: 0 },
-        gridScaleX: { value: 5 },
-        gridScaleY: { value: 5 },
-        lineThickness: { value: 0.05 }
-      },
-      vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0); }`,
-      fragmentShader: `
-                uniform float fillProgress; uniform float gridScaleX; uniform float gridScaleY; uniform float lineThickness;
-                varying vec2 vUv;
-                void main() {
-                    vec2 coord = vec2((vUv.x - 0.5) * gridScaleX, (vUv.y - 0.5) * gridScaleY);
-                    vec2 grid = abs(fract(coord - 0.5) - 0.5);
-                    float lineX = smoothstep(lineThickness, 0.0, grid.x);
-                    float lineY = smoothstep(lineThickness, 0.0, grid.y);
-                    float lineAlpha = max(lineX, lineY);
-                    float distX = abs(vUv.x - 0.5); float distY = abs(vUv.y - 0.5);
-                    float revealX = 1.0 - smoothstep(fillProgress * 0.5, fillProgress * 0.5 + 0.1, distY);
-                    float revealY = 1.0 - smoothstep(fillProgress * 0.5, fillProgress * 0.5 + 0.1, distX);
-                    float structuralMask = max(lineX * revealX, lineY * revealY);
-                    float generalFade = 1.0 - smoothstep(fillProgress * 0.7, fillProgress * 0.7 + 0.2, max(distX, distY));
-                    float finalMask = max(structuralMask, generalFade * lineAlpha * 0.3);
-                    float edgeFadeX = smoothstep(0.0, 0.4, vUv.x) * smoothstep(1.0, 0.6, vUv.x);
-                    float edgeFadeY = smoothstep(0.0, 0.4, vUv.y) * smoothstep(1.0, 0.6, vUv.y);
-                    gl_FragColor = vec4(vec3(1.0), finalMask * edgeFadeX * edgeFadeY * 0.1);
-                }
-            `,
+      uniforms: this.vGridUniforms,
+      vertexShader: VERTICAL_GRID_VERTEX_SHADER,
+      fragmentShader: VERTICAL_GRID_FRAGMENT_SHADER,
       transparent: true,
       depthWrite: false,
       side: DoubleSide,
@@ -22046,23 +22893,24 @@ var EnchartixGraph = class {
     const { bgStr, secStr } = generateThemeColors(this.themeColor, isDark);
     const bgNum = new Color(bgStr).getHex();
     this.scene.background = new Color(bgNum);
-    this.scene.fog = new FogExp2(bgNum, isDark ? 2e-3 : 1e-3);
-    if (this.gridMaterial) {
-      this.gridMaterial.uniforms.color.value.set(secStr);
-      this.gridMaterial.uniforms.opacityMulti.value = isDark ? 0.6 : 0.8;
+    this.scene.fog = new FogExp2(bgNum, isDark ? 18e-4 : 1e-3);
+    if (this.gridUniforms) {
+      this.gridUniforms.color.value.set(secStr);
+      this.gridUniforms.opacityMulti.value = isDark ? 0.75 : 0.9;
     }
     if (this.bloomPass) {
-      this.bloomPass.strength = isDark ? 1.2 : 0;
+      this.bloomPass.strength = isDark ? 1.15 : 0;
       this.bloomPass.threshold = isDark ? 0 : 0.5;
     }
     this.applyLayout(this.currentBoxWidth, this.currentBoxDepth, true);
   }
   updateGradientDirection(isTopDown) {
     this.hitboxes.forEach((mesh) => {
-      if (!mesh.geometry.attributes.position) return;
       const posAttr = mesh.geometry.attributes.position;
       const colorAttr = mesh.geometry.attributes.color;
-      const size = mesh.userData.boxSize;
+      if (!posAttr || !colorAttr) return;
+      const hbData = mesh.userData;
+      const size = hbData.boxSize;
       if (!size) return;
       for (let i = 0; i < posAttr.count; i++) {
         let alpha = 0;
@@ -22079,10 +22927,21 @@ var EnchartixGraph = class {
     });
   }
   updateGridOrientation() {
+    var _a, _b, _c;
     if (!this.hoveredSegment) return;
     const segBox = new Box3().setFromObject(this.hoveredSegment);
-    const segSize = this.hoveredSegment.userData.boxSize;
+    const hbData = this.hoveredSegment.userData;
     const segCenter = segBox.getCenter(new Vector3());
+    const segSize = segBox.getSize(new Vector3());
+    const scaleInfo = hbData.scaleInfo;
+    this.vGridUniforms.accentColor.value.set(hbData.color);
+    this.vGridUniforms.cellsPos.value = scaleInfo.cellsPos;
+    this.vGridUniforms.cellsNeg.value = scaleInfo.cellsNeg;
+    this.vGridUniforms.zeroLineV.value = (_a = hbData.exactZeroV) != null ? _a : 0.08;
+    this.vGridUniforms.topPadV.value = (_b = hbData.exactTopPadV) != null ? _b : 0.05;
+    this.vGridUniforms.bottomPadV.value = (_c = hbData.exactBottomPadV) != null ? _c : 0.05;
+    const numEntries = Math.max(2, hbData.sets.length + 1);
+    this.vGridUniforms.gridScaleX.value = numEntries;
     if (this.isTopDownView) {
       this.verticalGrid.rotation.x = -Math.PI / 2;
       this.verticalGrid.position.set(
@@ -22091,8 +22950,6 @@ var EnchartixGraph = class {
         segCenter.z
       );
       this.verticalGrid.scale.set(segSize.x, segSize.z, 1);
-      this.vGridMat.uniforms.gridScaleX.value = segSize.x / 4;
-      this.vGridMat.uniforms.gridScaleY.value = segSize.z / 4;
     } else {
       this.verticalGrid.rotation.x = 0;
       this.verticalGrid.position.set(
@@ -22101,18 +22958,18 @@ var EnchartixGraph = class {
         segBox.min.z + 0.2
       );
       this.verticalGrid.scale.set(segSize.x, segSize.y, 1);
-      this.vGridMat.uniforms.gridScaleX.value = segSize.x / 4;
-      this.vGridMat.uniforms.gridScaleY.value = segSize.y / 4;
     }
   }
   toggleViewMode() {
     this.is2DMode = !this.is2DMode;
-    this.toggleBtn.innerText = this.is2DMode ? this.labels.viewToggle3D : this.labels.viewToggle2D;
+    this.toggleBtn.textContent = this.is2DMode ? this.labels.viewToggle3D : this.labels.viewToggle2D;
     if (this.hoveredSegment) {
       this.hoveredSegment.material.opacity = 0;
       this.hoveredSegment = null;
+      this.hoveredDayBySeries.clear();
+      this.isDockAnimating = true;
       this.tooltip.setCssProps({ opacity: "0" });
-      this.vGridMat.uniforms.targetFill.value = 0;
+      this.vGridUniforms.targetFill.value = 0;
     }
     this.transition.startPos.copy(this.camera.position);
     this.transition.startTarget.copy(this.controls.target);
@@ -22127,8 +22984,8 @@ var EnchartixGraph = class {
       this.transition.endTarget.copy(this.graphCenter);
       this.controls.enableRotate = false;
     } else {
-      this.transition.endWidth = 250;
-      this.transition.endDepth = this.data.length * 120;
+      this.transition.endWidth = 260;
+      this.transition.endDepth = Math.max(1, this.data.length) * 125;
       this.transition.endPos.copy(this.pos3D);
       this.transition.endTarget.copy(this.graphCenter);
       this.controls.enableRotate = true;
@@ -22139,72 +22996,150 @@ var EnchartixGraph = class {
     this.transition.endQuat.copy(tempCam.quaternion);
     this.transition.startTime = performance.now();
     this.transition.active = true;
-    clearTimeout(this.inactivityTimer);
+    if (this.inactivityTimer !== null) {
+      activeWindow.clearTimeout(this.inactivityTimer);
+    }
   }
   setupInteractions() {
-    this.raycaster = new Raycaster();
-    this.mouse = new Vector2();
+    const resetInactivity = () => {
+      if (this.inactivityTimer !== null) {
+        activeWindow.clearTimeout(this.inactivityTimer);
+      }
+      this.inactivityTimer = activeWindow.setTimeout(() => {
+        this.transition.startPos.copy(this.camera.position);
+        this.transition.startTarget.copy(this.controls.target);
+        this.transition.startQuat.copy(this.camera.quaternion);
+        this.transition.startWidth = this.currentBoxWidth;
+        this.transition.startDepth = this.currentBoxDepth;
+        if (this.is2DMode) {
+          const aspect2 = this.clientW / this.clientH;
+          this.transition.endWidth = this.viewSize * aspect2 * 0.85;
+          this.transition.endDepth = this.viewSize * 0.85;
+          this.transition.endPos.copy(this.pos2D);
+        } else {
+          this.transition.endWidth = 260;
+          this.transition.endDepth = Math.max(1, this.data.length) * 125;
+          this.transition.endPos.copy(this.pos3D);
+        }
+        this.transition.endTarget.copy(this.graphCenter);
+        const tempCam = this.camera.clone();
+        tempCam.position.copy(this.transition.endPos);
+        tempCam.lookAt(this.transition.endTarget);
+        this.transition.endQuat.copy(tempCam.quaternion);
+        this.transition.startTime = performance.now();
+        this.transition.active = true;
+      }, this.INACTIVITY_DELAY_MS);
+    };
     const handleInteraction = (clientX, clientY) => {
+      var _a;
+      resetInactivity();
       if (this.transition.active) return;
       const rect = this.chartWrapper.getBoundingClientRect();
       this.mouse.x = (clientX - rect.left) / rect.width * 2 - 1;
       this.mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
       this.raycaster.setFromCamera(this.mouse, this.camera);
       const intersects = this.raycaster.intersectObjects(this.hitboxes);
-      if (intersects.length > 0) {
+      if (intersects.length > 0 && intersects[0]) {
         const object = intersects[0].object;
         if (this.hoveredSegment !== object) {
-          if (this.hoveredSegment) this.hoveredSegment.material.opacity = 0;
+          if (this.hoveredSegment) {
+            this.hoveredSegment.material.opacity = 0;
+          }
           this.hoveredSegment = object;
-          this.hoveredSegment.material.opacity = this.currentIsDark ? 0.3 : 0.4;
+          this.hoveredSegment.material.opacity = this.currentIsDark ? 0.28 : 0.35;
           const data = object.userData;
-          this.vGridMat.uniforms.targetFill.value = 1;
-          this.vGridMat.uniforms.fillProgress.value = 0;
+          this.hoveredDayBySeries.clear();
+          this.hoveredDayBySeries.set(data.seriesIndex, data.dayIndex);
+          this.isDockAnimating = true;
+          this.vGridUniforms.targetFill.value = 1;
+          this.vGridUniforms.fillProgress.value = 0;
           this.verticalGrid.visible = true;
           this.updateGridOrientation();
           this.graphGroup.children.forEach((child) => {
-            if (child.userData && child.userData.isDataElement) {
-              child.userData.targetOpacity = child.userData.exercise === data.exercise ? child.userData.baseOpacity : 0.15;
+            const uData = child.userData;
+            if (uData && uData.isDataElement && uData.baseOpacity !== void 0) {
+              uData.targetOpacity = uData.exercise === data.exercise ? uData.baseOpacity : 0.15;
             }
           });
-          this.tooltip.querySelector("#tt-title").innerText = `${data.date} (${data.exercise})`;
-          this.tooltip.querySelector("#tt-title").setCssProps({
+          this.ttTitle.textContent = `${data.date} (${data.exercise})`;
+          this.ttTitle.setCssProps({
             color: data.color,
             "border-color": data.color
           });
-          const ttData = this.tooltip.querySelector("#tt-data");
-          ttData.replaceChildren();
-          const totalDiv = document.createElement("div");
-          totalDiv.textContent = `${this.labels.tooltipNoteTotal}: `;
-          const totalBold = document.createElement("b");
-          totalBold.textContent = data.dayTotal;
-          totalDiv.appendChild(totalBold);
-          const exerciseDiv = document.createElement("div");
-          exerciseDiv.textContent = `${data.exercise}: ${data.sets.join(" + ")}`;
-          const cumulativeDiv = document.createElement("div");
-          cumulativeDiv.textContent = `${this.labels.tooltipCumulative}: `;
-          const cumulativeBold = document.createElement("b");
-          cumulativeBold.textContent = data.total;
-          cumulativeDiv.appendChild(cumulativeBold);
-          ttData.append(totalDiv, exerciseDiv, cumulativeDiv);
+          this.ttDataContainer.replaceChildren();
+          const totalDiv = this.ttDataContainer.createDiv({
+            text: `${this.labels.tooltipNoteTotal}: `
+          });
+          const signPrefix = data.dayTotal > 0 ? "+" : "";
+          totalDiv.createEl("b", { text: `${signPrefix}${data.dayTotal}` });
+          this.ttDataContainer.createDiv({
+            text: `${this.labels.tooltipEntries} [${data.sets.join(" \u2192 ")}]`
+          });
+          const scaleDiv = this.ttDataContainer.createDiv({
+            text: `${(_a = this.labels.tooltipGridScale) != null ? _a : "Grid Scale:"} `
+          });
+          scaleDiv.createEl("b", {
+            text: `1 cell = ${data.scaleInfo.step} (max ${data.scaleInfo.maxCeil})`
+          });
+          const cumulativeDiv = this.ttDataContainer.createDiv({
+            text: `${this.labels.tooltipCumulative}: `
+          });
+          cumulativeDiv.createEl("b", { text: String(data.total) });
+          if (data.note) {
+            this.ttDataContainer.createDiv({
+              cls: "enchartix-tooltip-note",
+              text: `\u{1F4DD} "${data.note}"`
+            });
+          }
+          if (data.file) {
+            const hint = this.ttDataContainer.createDiv({
+              cls: "enchartix-tooltip-link-hint",
+              text: `\u{1F517} Click to open: ${data.file}`
+            });
+            hint.setCssProps({ color: data.color });
+          }
+          this.chartWrapper.setCssProps({
+            cursor: data.file ? "pointer" : "default"
+          });
         }
-        const tw = this.tooltip.offsetWidth, th = this.tooltip.offsetHeight;
-        let tLeft = clientX - rect.left + 15, tTop = clientY - rect.top + 15;
+        const tw = this.tooltip.offsetWidth;
+        const th = this.tooltip.offsetHeight;
+        let tLeft = clientX - rect.left + 15;
+        let tTop = clientY - rect.top + 15;
         if (tLeft + tw > rect.width) tLeft = clientX - rect.left - tw - 15;
         if (tTop + th > rect.height) tTop = clientY - rect.top - th - 15;
-        this.tooltip.setCssProps({
-          opacity: "1",
-          left: `${Math.max(10, Math.min(tLeft, rect.width - tw - 10))}px`,
-          top: `${Math.max(10, Math.min(tTop, rect.height - th - 10))}px`
-        });
+        if (this.isTooltipPinned) {
+          this.tooltip.setCssProps({
+            opacity: "1",
+            top: "16px",
+            right: "16px",
+            left: "auto"
+          });
+        } else {
+          const tw2 = this.tooltip.offsetWidth;
+          const th2 = this.tooltip.offsetHeight;
+          let tLeft2 = clientX - rect.left + 15;
+          let tTop2 = clientY - rect.top + 15;
+          if (tLeft2 + tw2 > rect.width) tLeft2 = clientX - rect.left - tw2 - 15;
+          if (tTop2 + th2 > rect.height) tTop2 = clientY - rect.top - th2 - 15;
+          this.tooltip.setCssProps({
+            opacity: "1",
+            right: "auto",
+            left: `${Math.max(10, Math.min(tLeft2, rect.width - tw2 - 10))}px`,
+            top: `${Math.max(10, Math.min(tTop2, rect.height - th2 - 10))}px`
+          });
+        }
       } else {
         if (this.hoveredSegment) {
           this.hoveredSegment.material.opacity = 0;
           this.hoveredSegment = null;
-          this.vGridMat.uniforms.targetFill.value = 0;
+          this.hoveredDayBySeries.clear();
+          this.isDockAnimating = true;
+          this.vGridUniforms.targetFill.value = 0;
           this.graphGroup.children.forEach((child) => {
-            if (child.userData && child.userData.isDataElement) {
-              child.userData.targetOpacity = child.userData.baseOpacity;
+            const uData = child.userData;
+            if (uData && uData.isDataElement && uData.baseOpacity !== void 0) {
+              uData.targetOpacity = uData.baseOpacity;
             }
           });
         }
@@ -22217,68 +23152,141 @@ var EnchartixGraph = class {
     );
     this.chartWrapper.addEventListener(
       "touchstart",
-      (e) => handleInteraction(e.touches[0].clientX, e.touches[0].clientY),
+      (e) => {
+        if (e.touches[0]) {
+          handleInteraction(e.touches[0].clientX, e.touches[0].clientY);
+        }
+      },
       { passive: true }
     );
     this.chartWrapper.addEventListener(
       "touchmove",
-      (e) => handleInteraction(e.touches[0].clientX, e.touches[0].clientY),
+      (e) => {
+        if (e.touches[0]) {
+          handleInteraction(e.touches[0].clientX, e.touches[0].clientY);
+        }
+      },
       { passive: true }
     );
+    this.chartWrapper.addEventListener("wheel", () => resetInactivity(), {
+      passive: true
+    });
     this.chartWrapper.addEventListener("mouseleave", () => {
       if (this.hoveredSegment) {
         this.hoveredSegment.material.opacity = 0;
         this.hoveredSegment = null;
+        this.hoveredDayBySeries.clear();
+        this.isDockAnimating = true;
       }
       this.tooltip.setCssProps({ opacity: "0" });
+      resetInactivity();
     });
     this.controls.addEventListener("start", () => {
       if (this.transition.active) {
         this.transition.active = false;
         this.applyLayout(this.currentBoxWidth, this.currentBoxDepth, true);
       }
-      clearTimeout(this.inactivityTimer);
+      if (this.inactivityTimer !== null) {
+        activeWindow.clearTimeout(this.inactivityTimer);
+      }
     });
-    const resetInactivity = () => {
-      clearTimeout(this.inactivityTimer);
-      this.inactivityTimer = setTimeout(() => {
-        this.transition.startPos.copy(this.camera.position);
-        this.transition.startTarget.copy(this.controls.target);
-        this.transition.startQuat.copy(this.camera.quaternion);
-        this.transition.startWidth = this.currentBoxWidth;
-        this.transition.startDepth = this.currentBoxDepth;
-        if (this.is2DMode) {
-          const aspect2 = this.clientW / this.clientH;
-          this.transition.endWidth = this.viewSize * aspect2 * 0.85;
-          this.transition.endDepth = this.viewSize * 0.85;
-          this.transition.endPos.copy(this.pos2D);
-        } else {
-          this.transition.endWidth = 250;
-          this.transition.endDepth = this.data.length * 120;
-          this.transition.endPos.copy(this.pos3D);
-        }
-        this.transition.endTarget.copy(this.graphCenter);
-        const tempCam = this.camera.clone();
-        tempCam.position.copy(this.transition.endPos);
-        tempCam.lookAt(this.transition.endTarget);
-        this.transition.endQuat.copy(tempCam.quaternion);
-        this.transition.startTime = performance.now();
-        this.transition.active = true;
-      }, 5e3);
-    };
+    this.controls.addEventListener("change", () => resetInactivity());
     this.controls.addEventListener("end", () => resetInactivity());
     resetInactivity();
+    let pointerDownPos = { x: 0, y: 0 };
+    this.chartWrapper.addEventListener("pointerdown", (e) => {
+      pointerDownPos = { x: e.clientX, y: e.clientY };
+    });
+    this.chartWrapper.addEventListener("pointerup", (e) => {
+      var _a, _b;
+      const moveDist = Math.hypot(
+        e.clientX - pointerDownPos.x,
+        e.clientY - pointerDownPos.y
+      );
+      if (moveDist < 5 && this.hoveredSegment) {
+        const data = this.hoveredSegment.userData;
+        if (data.file) {
+          const win = activeWindow;
+          if ((_b = (_a = win.app) == null ? void 0 : _a.workspace) == null ? void 0 : _b.openLinkText) {
+            win.app.workspace.openLinkText(data.file, "");
+          }
+        }
+      }
+    });
+  }
+  stepDockMagnification() {
+    this.dirtySeries.clear();
+    let anyChanged = false;
+    this.parsedSeries.forEach((_series, sIdx) => {
+      var _a, _b, _c;
+      const weights = this.dayWeightsBySeries[sIdx];
+      const morphs = this.dayFocusMorphBySeries[sIdx];
+      if (!weights || !morphs || weights.length === 0) return;
+      const numDays = weights.length;
+      const hoveredDay = (_a = this.hoveredDayBySeries.get(sIdx)) != null ? _a : -1;
+      const naturalDayWidth = this.currentBoxWidth / numDays;
+      const targetExpandedWeight = naturalDayWidth < this.MIN_EXPANDED_DAY_WIDTH && numDays > 1 ? Math.min(
+        numDays * 0.45,
+        this.MIN_EXPANDED_DAY_WIDTH / this.currentBoxWidth * numDays * 1.35
+      ) : 1.45;
+      let seriesChanged = false;
+      for (let i = 0; i < numDays; i++) {
+        const dIdx = i + 1;
+        let targetW = 1;
+        let targetMorph = 0;
+        if (hoveredDay > 0) {
+          const dist = Math.abs(dIdx - hoveredDay);
+          if (dist === 0) {
+            targetW = Math.max(1.45, targetExpandedWeight);
+            targetMorph = 1;
+          } else if (dist === 1) {
+            targetW = 1 + (Math.max(1.45, targetExpandedWeight) - 1) * 0.25;
+            targetMorph = 0;
+          }
+        }
+        const currentW = (_b = weights[i]) != null ? _b : 1;
+        const diffW = targetW - currentW;
+        if (Math.abs(diffW) > 2e-3) {
+          weights[i] = currentW + diffW * 0.22;
+          seriesChanged = true;
+        } else if (currentW !== targetW) {
+          weights[i] = targetW;
+          seriesChanged = true;
+        }
+        const currentM = (_c = morphs[i]) != null ? _c : 0;
+        const diffM = targetMorph - currentM;
+        if (Math.abs(diffM) > 2e-3) {
+          morphs[i] = currentM + diffM * 0.22;
+          seriesChanged = true;
+        } else if (currentM !== targetMorph) {
+          morphs[i] = targetMorph;
+          seriesChanged = true;
+        }
+      }
+      if (seriesChanged) {
+        this.dirtySeries.add(sIdx);
+        anyChanged = true;
+      }
+    });
+    return anyChanged;
   }
   updateThemeColor(newHex) {
+    var _a;
     this.themeColor = newHex;
     while (this.graphGroup.children.length > 0) {
       const child = this.graphGroup.children[0];
+      if (!child) break;
       this.graphGroup.remove(child);
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) {
-        if (Array.isArray(child.material))
+      if (child instanceof Mesh) {
+        child.geometry.dispose();
+        if (Array.isArray(child.material)) {
           child.material.forEach((m) => m.dispose());
-        else child.material.dispose();
+        } else if (child.material instanceof Material) {
+          child.material.dispose();
+        }
+      } else if (child instanceof Sprite) {
+        (_a = child.material.map) == null ? void 0 : _a.dispose();
+        child.material.dispose();
       }
     }
     this.hitboxes = [];
@@ -22290,7 +23298,7 @@ var EnchartixGraph = class {
   downloadScreenshot(filename = "enchartix-graph.png") {
     this.composer.render();
     const dataURL = this.renderer.domElement.toDataURL("image/png");
-    const link = document.createElement("a");
+    const link = this.chartWrapper.createEl("a");
     link.download = filename;
     link.href = dataURL;
     link.click();
@@ -22299,16 +23307,24 @@ var EnchartixGraph = class {
   setupObservers() {
     this.intersectionObserver = new IntersectionObserver(
       (entries) => {
-        this.isVisible = entries[0].isIntersecting;
+        if (entries[0]) {
+          this.isVisible = entries[0].isIntersecting;
+        }
       },
       { threshold: 0.1 }
     );
     this.intersectionObserver.observe(this.chartWrapper);
     this.resizeObserver = new ResizeObserver(() => {
-      if (!this.chartWrapper.clientWidth || !this.chartWrapper.clientHeight)
+      if (!this.chartWrapper.clientWidth || !this.chartWrapper.clientHeight) {
         return;
-      this.clientW = Math.max(this.chartWrapper.clientWidth, 10);
-      this.clientH = Math.max(this.chartWrapper.clientHeight, 10);
+      }
+      const newW = Math.max(this.chartWrapper.clientWidth, 10);
+      const newH = Math.max(this.chartWrapper.clientHeight, 10);
+      if (newW === this.clientW && newH === this.clientH) {
+        return;
+      }
+      this.clientW = newW;
+      this.clientH = newH;
       const aspect2 = this.clientW / this.clientH;
       this.camera.left = -this.viewSize * aspect2 / 2;
       this.camera.right = this.viewSize * aspect2 / 2;
@@ -22323,24 +23339,26 @@ var EnchartixGraph = class {
       }
     });
     this.resizeObserver.observe(this.chartWrapper);
+    const doc = activeDocument;
     this.themeObserver = new MutationObserver(() => {
-      const isNowDark = document.body.classList.contains("theme-dark") || document.documentElement.classList.contains("theme-dark");
+      const isNowDark = doc.body.classList.contains("theme-dark") || doc.documentElement.classList.contains("theme-dark");
       if (isNowDark !== this.currentIsDark) {
         this.currentIsDark = isNowDark;
         this.updateDOMTheme(this.currentIsDark);
         this.updateThreeTheme(this.currentIsDark);
       }
     });
-    this.themeObserver.observe(document.body, {
+    this.themeObserver.observe(doc.body, {
       attributes: true,
       attributeFilter: ["class"]
     });
   }
   animate() {
-    if (!document.body.contains(this.chartWrapper)) {
-      this.intersectionObserver.disconnect();
-      this.resizeObserver.disconnect();
-      if (this.themeObserver) this.themeObserver.disconnect();
+    var _a, _b, _c;
+    if (!activeDocument.body.contains(this.chartWrapper)) {
+      (_a = this.intersectionObserver) == null ? void 0 : _a.disconnect();
+      (_b = this.resizeObserver) == null ? void 0 : _b.disconnect();
+      (_c = this.themeObserver) == null ? void 0 : _c.disconnect();
       return;
     }
     this.animationFrameID = requestAnimationFrame(this.animate);
@@ -22376,25 +23394,33 @@ var EnchartixGraph = class {
       }
     } else {
       this.controls.update();
+      if (this.isDockAnimating) {
+        const changed = this.stepDockMagnification();
+        if (changed) {
+          this.applyLayout(this.currentBoxWidth, this.currentBoxDepth, false, true);
+        } else {
+          this.isDockAnimating = false;
+          this.applyLayout(this.currentBoxWidth, this.currentBoxDepth, true, false);
+        }
+      }
     }
-    if (this.vGridMat && this.vGridMat.uniforms.fillProgress) {
-      const currentFill = this.vGridMat.uniforms.fillProgress.value;
-      const targetFill = this.vGridMat.uniforms.targetFill.value;
+    if (this.vGridUniforms) {
+      const currentFill = this.vGridUniforms.fillProgress.value;
+      const targetFill = this.vGridUniforms.targetFill.value;
       if (targetFill === 0 && currentFill > 0) {
-        this.vGridMat.uniforms.fillProgress.value = 0;
+        this.vGridUniforms.fillProgress.value = 0;
         this.verticalGrid.visible = false;
       } else if (targetFill === 1 && currentFill < 1) {
-        this.vGridMat.uniforms.fillProgress.value = Math.min(
-          1,
-          currentFill + 0.08
-        );
+        this.vGridUniforms.fillProgress.value = Math.min(1, currentFill + 0.08);
       }
     }
     this.graphGroup.children.forEach((child) => {
-      if (child.userData && child.userData.isDataElement) {
-        const mat = child.material;
-        if (Math.abs(mat.opacity - child.userData.targetOpacity) > 0.01) {
-          mat.opacity += (child.userData.targetOpacity - mat.opacity) * 0.25;
+      if (child instanceof Mesh && child.material instanceof Material) {
+        const uData = child.userData;
+        if (uData && uData.isDataElement && uData.targetOpacity !== void 0) {
+          if (Math.abs(child.material.opacity - uData.targetOpacity) > 0.01) {
+            child.material.opacity += (uData.targetOpacity - child.material.opacity) * 0.25;
+          }
         }
       }
     });
@@ -22408,37 +23434,51 @@ var EnchartixGraph = class {
     this.composer.render();
   }
   destroy() {
+    var _a, _b, _c;
     this.isVisible = false;
-    if (this.animationFrameID) cancelAnimationFrame(this.animationFrameID);
-    if (this.intersectionObserver) this.intersectionObserver.disconnect();
-    if (this.resizeObserver) this.resizeObserver.disconnect();
-    if (this.themeObserver) this.themeObserver.disconnect();
+    if (this.animationFrameID !== null) {
+      cancelAnimationFrame(this.animationFrameID);
+    }
+    if (this.inactivityTimer !== null) {
+      activeWindow.clearTimeout(this.inactivityTimer);
+    }
+    (_a = this.intersectionObserver) == null ? void 0 : _a.disconnect();
+    (_b = this.resizeObserver) == null ? void 0 : _b.disconnect();
+    (_c = this.themeObserver) == null ? void 0 : _c.disconnect();
     this.scene.traverse((object) => {
-      if (object.geometry) object.geometry.dispose();
-      if (object.material) {
-        if (Array.isArray(object.material))
+      var _a2;
+      if (object instanceof Mesh) {
+        object.geometry.dispose();
+        if (Array.isArray(object.material)) {
           object.material.forEach((m) => m.dispose());
-        else object.material.dispose();
+        } else if (object.material instanceof Material) {
+          object.material.dispose();
+        }
+      } else if (object instanceof Sprite) {
+        (_a2 = object.material.map) == null ? void 0 : _a2.dispose();
+        object.material.dispose();
       }
     });
     this.renderer.dispose();
     this.composer.dispose();
     this.controls.dispose();
-    if (this.chartWrapper && this.chartWrapper.parentNode) {
-      this.chartWrapper.parentNode.removeChild(this.chartWrapper);
-    }
+    this.chartWrapper.remove();
   }
 };
 
 // src/main.ts
 var EnchartixPlugin = class extends import_obsidian.Plugin {
+  constructor() {
+    super(...arguments);
+    this.activeGraphs = [];
+  }
   onload() {
-    console.debug("\u{1F52E} Enchartix 3D Graph loaded!");
-    window.EnchartixGraph = EnchartixGraph;
+    activeWindow.EnchartixGraph = EnchartixGraph;
   }
   onunload() {
-    console.debug("\u{1F6D1} Enchartix 3D Graph unloaded!");
-    delete window.EnchartixGraph;
+    this.activeGraphs.forEach((g) => g.destroy());
+    this.activeGraphs = [];
+    delete activeWindow.EnchartixGraph;
   }
 };
 /*! Bundled license information:

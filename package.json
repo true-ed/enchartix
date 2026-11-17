@@ -5,14 +5,15 @@
   "scripts": {
     "dev": "vite",
     "watch": "node esbuild.config.mjs",
-    "build": "node esbuild.config.mjs production"
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "typecheck": "tsc -noEmit -skipLibCheck"
   },
   "dependencies": {
     "three": "^0.160.0"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
-    "builtin-modules": "^5.0.0",
+    "@types/three": "^0.160.0",
     "esbuild": "^0.27.3",
     "obsidian": "^1.12.2",
     "typescript": "^5.9.3",

@@ -1,21 +1,22 @@
-// main.ts
-import { Plugin } from 'obsidian';
-import { EnchartixGraph } from './EnchartixCore';
+import { Plugin } from "obsidian";
+import { EnchartixGraph } from "./core/EnchartixGraph";
 
 declare global {
-    interface Window {
-        EnchartixGraph?: typeof EnchartixGraph;
-    }
+	interface Window {
+		EnchartixGraph?: typeof EnchartixGraph;
+	}
 }
 
 export default class EnchartixPlugin extends Plugin {
-    onload() {
-        console.debug('🔮 Enchartix 3D Graph loaded!');
-        window.EnchartixGraph = EnchartixGraph;
-    }
+	private activeGraphs: EnchartixGraph[] = [];
 
-    onunload() {
-        console.debug('🛑 Enchartix 3D Graph unloaded!');
-        delete window.EnchartixGraph;
-    }
+	override onload(): void {
+		activeWindow.EnchartixGraph = EnchartixGraph;
+	}
+
+	override onunload(): void {
+		this.activeGraphs.forEach((g) => g.destroy());
+		this.activeGraphs = [];
+		delete activeWindow.EnchartixGraph;
+	}
 }

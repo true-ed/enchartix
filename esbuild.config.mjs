@@ -1,31 +1,32 @@
 import esbuild from "esbuild";
 import process from "process";
-import builtins from "builtin-modules";
+import { builtinModules } from "node:module";
 
-const prod = (process.argv[2] === "production");
+const prod = process.argv[2] === "production";
 
 const context = await esbuild.context({
-    banner: {
-        js: '/* Enchartix 3D Plugin */',
-    },
-    entryPoints: ["src/main.ts"],
-    bundle: true,
-    external: [
-        "obsidian",
-        "electron",
-        ...builtins
-    ],
-    format: "cjs",
-    target: "es2018",
-    logLevel: "info",
-    sourcemap: prod ? false : "inline",
-    treeShaking: true,
-    outfile: "main.js",
+	banner: {
+		js: "/* Enchartix 3D Plugin */",
+	},
+	entryPoints: ["src/main.ts"],
+	bundle: true,
+	external: [
+		"obsidian",
+		"electron",
+		...builtinModules,
+		...builtinModules.map((m) => `node:${m}`),
+	],
+	format: "cjs",
+	target: "es2018",
+	logLevel: "info",
+	sourcemap: prod ? false : "inline",
+	treeShaking: true,
+	outfile: "main.js",
 });
 
 if (prod) {
-    await context.rebuild();
-    process.exit(0);
+	await context.rebuild();
+	process.exit(0);
 } else {
-    await context.watch();
+	await context.watch();
 }
