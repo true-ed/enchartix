@@ -22060,8 +22060,35 @@ var defaultLabels = {
   tooltipDailyTotal: "Entry Total",
   tooltipEntries: "Values:",
   tooltipCumulative: "Cumulative:",
-  tooltipGridScale: "Grid Scale:"
+  tooltipGridScale: "Grid Scale:",
+  tooltipModePinned: "\u{1F4CC} Info: Pinned Top",
+  tooltipModeFloating: "\u{1F4AC} Info: Floating"
 };
+function disposeMaterial(mat) {
+  if (Array.isArray(mat)) {
+    mat.forEach((item) => {
+      if (item instanceof Material) {
+        item.dispose();
+      }
+    });
+  } else if (mat instanceof Material) {
+    mat.dispose();
+  }
+}
+function disposeObject3D(obj) {
+  var _a;
+  if (obj instanceof Mesh) {
+    if (obj.geometry instanceof BufferGeometry) {
+      obj.geometry.dispose();
+    }
+    disposeMaterial(obj.material);
+  } else if (obj instanceof Sprite) {
+    if (obj.material instanceof SpriteMaterial) {
+      (_a = obj.material.map) == null ? void 0 : _a.dispose();
+      obj.material.dispose();
+    }
+  }
+}
 function computeNiceAxis(maxAbsValue, targetMaxCells) {
   if (maxAbsValue <= 0) {
     return { step: 1, cells: targetMaxCells, ceil: targetMaxCells };
@@ -22136,9 +22163,7 @@ var EnchartixGraph = class {
     this.BOX_HEIGHT = 120;
     this.MIN_EXPANDED_DAY_WIDTH = 64;
     this.INACTIVITY_DELAY_MS = 6e4;
-    // 1 full minute of zero interaction
     this.currentBoxWidth = 260;
-    // macOS Dock Magnification weights + Smooth-to-Sharp Focus Morph per series & day
     this.hoveredDayBySeries = /* @__PURE__ */ new Map();
     this.dayWeightsBySeries = [];
     this.dayFocusMorphBySeries = [];
@@ -22155,6 +22180,86 @@ var EnchartixGraph = class {
     this.pos2D = new Vector3();
     this.raycaster = new Raycaster();
     this.mouse = new Vector2();
+    this.animate = () => {
+      var _a, _b, _c;
+      if (!activeDocument.body.contains(this.chartWrapper)) {
+        (_a = this.intersectionObserver) == null ? void 0 : _a.disconnect();
+        (_b = this.resizeObserver) == null ? void 0 : _b.disconnect();
+        (_c = this.themeObserver) == null ? void 0 : _c.disconnect();
+        return;
+      }
+      this.animationFrameID = window.requestAnimationFrame(this.animate);
+      if (!this.isVisible) return;
+      if (this.transition.active) {
+        const now2 = performance.now();
+        let t = (now2 - this.transition.startTime) / this.transition.duration;
+        if (t >= 1) {
+          t = 1;
+          this.transition.active = false;
+        }
+        const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        this.camera.position.lerpVectors(
+          this.transition.startPos,
+          this.transition.endPos,
+          ease
+        );
+        this.controls.target.lerpVectors(
+          this.transition.startTarget,
+          this.transition.endTarget,
+          ease
+        );
+        this.camera.quaternion.slerpQuaternions(
+          this.transition.startQuat,
+          this.transition.endQuat,
+          ease
+        );
+        this.currentBoxWidth = this.transition.startWidth + (this.transition.endWidth - this.transition.startWidth) * ease;
+        this.currentBoxDepth = this.transition.startDepth + (this.transition.endDepth - this.transition.startDepth) * ease;
+        this.applyLayout(this.currentBoxWidth, this.currentBoxDepth, false);
+        if (t === 1) {
+          this.applyLayout(this.currentBoxWidth, this.currentBoxDepth, true);
+        }
+      } else {
+        this.controls.update();
+        if (this.isDockAnimating) {
+          const changed = this.stepDockMagnification();
+          if (changed) {
+            this.applyLayout(this.currentBoxWidth, this.currentBoxDepth, false, true);
+          } else {
+            this.isDockAnimating = false;
+            this.applyLayout(this.currentBoxWidth, this.currentBoxDepth, true, false);
+          }
+        }
+      }
+      if (this.vGridUniforms) {
+        const currentFill = this.vGridUniforms.fillProgress.value;
+        const targetFill = this.vGridUniforms.targetFill.value;
+        if (targetFill === 0 && currentFill > 0) {
+          this.vGridUniforms.fillProgress.value = 0;
+          this.verticalGrid.visible = false;
+        } else if (targetFill === 1 && currentFill < 1) {
+          this.vGridUniforms.fillProgress.value = Math.min(1, currentFill + 0.08);
+        }
+      }
+      this.graphGroup.children.forEach((child) => {
+        if (child instanceof Mesh && child.material instanceof Material) {
+          const uData = child.userData;
+          if (uData && uData.isDataElement && uData.targetOpacity !== void 0) {
+            if (Math.abs(child.material.opacity - uData.targetOpacity) > 0.01) {
+              child.material.opacity += (uData.targetOpacity - child.material.opacity) * 0.25;
+            }
+          }
+        }
+      });
+      const dir = new Vector3().subVectors(this.camera.position, this.controls.target).normalize();
+      const currentIsTopDown = dir.y > 0.707;
+      if (currentIsTopDown !== this.isTopDownView) {
+        this.isTopDownView = currentIsTopDown;
+        this.updateGradientDirection(this.isTopDownView);
+        this.updateGridOrientation();
+      }
+      this.composer.render();
+    };
     var _a, _b, _c, _d, _e;
     this.container = container;
     this.data = data;
@@ -22186,7 +22291,6 @@ var EnchartixGraph = class {
       startDepth: this.currentBoxDepth,
       endDepth: this.currentBoxDepth
     };
-    this.animate = this.animate.bind(this);
     this.initDOM();
     this.initThreeJS();
     this.setupObservers();
@@ -22209,18 +22313,12 @@ var EnchartixGraph = class {
       this.isTooltipPinned = !this.isTooltipPinned;
       this.pinTooltipBtn.textContent = this.isTooltipPinned ? (_a2 = this.labels.tooltipModePinned) != null ? _a2 : "\u{1F4CC} Info: Pinned Top" : (_b2 = this.labels.tooltipModeFloating) != null ? _b2 : "\u{1F4AC} Info: Floating";
       this.tooltip.classList.toggle("is-pinned", this.isTooltipPinned);
-      if (this.isTooltipPinned) {
-        this.tooltip.setCssProps({ top: "16px", right: "16px", left: "auto" });
-      }
     });
     this.tooltip = this.chartWrapper.createDiv({ cls: "enchartix-tooltip" });
     this.tooltip.classList.toggle("is-pinned", this.isTooltipPinned);
+    this.tooltip.addEventListener("mousemove", (e) => e.stopPropagation());
     this.ttTitle = this.tooltip.createDiv({ cls: "enchartix-tooltip-title" });
     this.ttTitle.id = "tt-title";
-    this.ttTitle.setCssProps({
-      color: this.themeColor,
-      "border-bottom-color": `${this.themeColor}44`
-    });
     this.ttDataContainer = this.tooltip.createDiv({ cls: "enchartix-tooltip-data" });
     this.ttDataContainer.id = "tt-data";
     this.updateDOMTheme(this.currentIsDark);
@@ -22229,23 +22327,15 @@ var EnchartixGraph = class {
     const { bgStr } = generateThemeColors(this.themeColor, isDark);
     const shadowAlpha = isDark ? "rgba(0,0,0,0.8)" : "rgba(0,0,0,0.15)";
     this.chartWrapper.setCssProps({
-      "background-color": bgStr,
-      "box-shadow": `inset 0 10px 30px ${shadowAlpha}, inset 0 0 20px ${this.themeColor}33`
-    });
-    this.toggleBtn.setCssProps({
-      background: isDark ? `${this.themeColor}22` : `${this.themeColor}15`,
-      border: `1px solid ${this.themeColor}`,
-      color: isDark ? this.themeColor : "#222"
-    });
-    this.pinTooltipBtn.setCssProps({
-      background: isDark ? `${this.themeColor}22` : `${this.themeColor}15`,
-      border: `1px solid ${this.themeColor}`,
-      color: isDark ? this.themeColor : "#222"
-    });
-    this.tooltip.setCssProps({
-      background: isDark ? "rgba(10, 10, 20, 0.88)" : "rgba(255, 255, 255, 0.92)",
-      color: isDark ? "#fff" : "#222",
-      "box-shadow": isDark ? "0 4px 15px rgba(0, 0, 0, 0.5)" : "0 4px 15px rgba(0, 0, 0, 0.1)"
+      "--enchartix-theme": this.themeColor,
+      "--enchartix-bg": bgStr,
+      "--enchartix-wrapper-shadow": `inset 0 10px 30px ${shadowAlpha}, inset 0 0 20px ${this.themeColor}33`,
+      "--enchartix-btn-bg": isDark ? `${this.themeColor}22` : `${this.themeColor}15`,
+      "--enchartix-btn-color": isDark ? this.themeColor : "#222222",
+      "--enchartix-tt-bg": isDark ? "rgba(10, 10, 20, 0.88)" : "rgba(255, 255, 255, 0.92)",
+      "--enchartix-tt-color": isDark ? "#ffffff" : "#222222",
+      "--enchartix-tt-shadow": isDark ? "0 4px 15px rgba(0, 0, 0, 0.5)" : "0 4px 15px rgba(0, 0, 0, 0.1)",
+      "--enchartix-tt-accent": this.themeColor
     });
   }
   initThreeJS() {
@@ -22324,10 +22414,6 @@ var EnchartixGraph = class {
     this.setupInteractions();
     this.animate();
   }
-  /**
-   * Creates a crisp 3D billboard text sprite anchored at its bottom-right corner (1, 0)
-   * so it always faces the camera while pivoting around the exact graph vertex!
-   */
   createValueSprite(val, accentHex) {
     const canvas = createEl("canvas");
     canvas.width = 256;
@@ -22335,7 +22421,7 @@ var EnchartixGraph = class {
     const ctx = canvas.getContext("2d");
     if (ctx) {
       const text = val > 0 ? `+${val}` : String(val);
-      ctx.font = "bold 64px system-ui, -apple-system, sans-serif";
+      ctx.font = "bold 46px system-ui, -apple-system, sans-serif";
       const metrics = ctx.measureText(text);
       const textW = metrics.width;
       const padX = 16;
@@ -22632,7 +22718,7 @@ var EnchartixGraph = class {
     for (let i = 0; i < count; i++) {
       const y = posAttribute.getY(i);
       const factor = Math.max(
-        0.15,
+        0.55,
         Math.min(1, (y + this.BOX_HEIGHT / 2) / this.BOX_HEIGHT)
       );
       const c = colorBottom.clone().lerp(colorTop, factor);
@@ -22739,12 +22825,11 @@ var EnchartixGraph = class {
             sprite = this.createValueSprite(pt.setVal, series.colorStr);
             sprites[i] = sprite;
           }
-          sprite.position.set(pos.x, pos.y + 0.8, pos.z);
-          sprite.material.opacity = Math.pow(morph, 1.5);
-          sprite.visible = true;
           const zoomScale = this.viewSize / 320 / (this.camera ? Math.max(0.35, this.camera.zoom) : 1);
           sprite.scale.set(26 * zoomScale, 9.75 * zoomScale, 1);
           sprite.position.set(pos.x, pos.y + 1.2 * zoomScale, pos.z);
+          sprite.material.opacity = Math.pow(morph, 1.5);
+          sprite.visible = true;
         } else {
           const sprite = sprites[i];
           if (sprite && sprite.visible) {
@@ -22968,7 +23053,7 @@ var EnchartixGraph = class {
       this.hoveredSegment = null;
       this.hoveredDayBySeries.clear();
       this.isDockAnimating = true;
-      this.tooltip.setCssProps({ opacity: "0" });
+      this.tooltip.classList.remove("is-visible");
       this.vGridUniforms.targetFill.value = 0;
     }
     this.transition.startPos.copy(this.camera.position);
@@ -22997,15 +23082,15 @@ var EnchartixGraph = class {
     this.transition.startTime = performance.now();
     this.transition.active = true;
     if (this.inactivityTimer !== null) {
-      activeWindow.clearTimeout(this.inactivityTimer);
+      window.clearTimeout(this.inactivityTimer);
     }
   }
   setupInteractions() {
     const resetInactivity = () => {
       if (this.inactivityTimer !== null) {
-        activeWindow.clearTimeout(this.inactivityTimer);
+        window.clearTimeout(this.inactivityTimer);
       }
-      this.inactivityTimer = activeWindow.setTimeout(() => {
+      this.inactivityTimer = window.setTimeout(() => {
         this.transition.startPos.copy(this.camera.position);
         this.transition.startTarget.copy(this.controls.target);
         this.transition.startQuat.copy(this.camera.quaternion);
@@ -23062,9 +23147,8 @@ var EnchartixGraph = class {
             }
           });
           this.ttTitle.textContent = `${data.date} (${data.exercise})`;
-          this.ttTitle.setCssProps({
-            color: data.color,
-            "border-color": data.color
+          this.tooltip.setCssProps({
+            "--enchartix-tt-accent": data.color
           });
           this.ttDataContainer.replaceChildren();
           const totalDiv = this.ttDataContainer.createDiv({
@@ -23092,43 +23176,26 @@ var EnchartixGraph = class {
             });
           }
           if (data.file) {
-            const hint = this.ttDataContainer.createDiv({
+            this.ttDataContainer.createDiv({
               cls: "enchartix-tooltip-link-hint",
               text: `\u{1F517} Click to open: ${data.file}`
             });
-            hint.setCssProps({ color: data.color });
           }
-          this.chartWrapper.setCssProps({
-            cursor: data.file ? "pointer" : "default"
+          this.chartWrapper.classList.toggle("is-clickable", Boolean(data.file));
+        }
+        if (!this.isTooltipPinned) {
+          const tw = this.tooltip.offsetWidth;
+          const th = this.tooltip.offsetHeight;
+          let tLeft = clientX - rect.left + 15;
+          let tTop = clientY - rect.top + 15;
+          if (tLeft + tw > rect.width) tLeft = clientX - rect.left - tw - 15;
+          if (tTop + th > rect.height) tTop = clientY - rect.top - th - 15;
+          this.tooltip.setCssProps({
+            "--enchartix-tt-left": `${Math.max(10, Math.min(tLeft, rect.width - tw - 10))}px`,
+            "--enchartix-tt-top": `${Math.max(10, Math.min(tTop, rect.height - th - 10))}px`
           });
         }
-        const tw = this.tooltip.offsetWidth;
-        const th = this.tooltip.offsetHeight;
-        let tLeft = clientX - rect.left + 15;
-        let tTop = clientY - rect.top + 15;
-        if (tLeft + tw > rect.width) tLeft = clientX - rect.left - tw - 15;
-        if (tTop + th > rect.height) tTop = clientY - rect.top - th - 15;
-        if (this.isTooltipPinned) {
-          this.tooltip.setCssProps({
-            opacity: "1",
-            top: "16px",
-            right: "16px",
-            left: "auto"
-          });
-        } else {
-          const tw2 = this.tooltip.offsetWidth;
-          const th2 = this.tooltip.offsetHeight;
-          let tLeft2 = clientX - rect.left + 15;
-          let tTop2 = clientY - rect.top + 15;
-          if (tLeft2 + tw2 > rect.width) tLeft2 = clientX - rect.left - tw2 - 15;
-          if (tTop2 + th2 > rect.height) tTop2 = clientY - rect.top - th2 - 15;
-          this.tooltip.setCssProps({
-            opacity: "1",
-            right: "auto",
-            left: `${Math.max(10, Math.min(tLeft2, rect.width - tw2 - 10))}px`,
-            top: `${Math.max(10, Math.min(tTop2, rect.height - th2 - 10))}px`
-          });
-        }
+        this.tooltip.classList.add("is-visible");
       } else {
         if (this.hoveredSegment) {
           this.hoveredSegment.material.opacity = 0;
@@ -23143,7 +23210,8 @@ var EnchartixGraph = class {
             }
           });
         }
-        this.tooltip.setCssProps({ opacity: "0" });
+        this.chartWrapper.classList.remove("is-clickable");
+        this.tooltip.classList.remove("is-visible");
       }
     };
     this.chartWrapper.addEventListener(
@@ -23178,7 +23246,8 @@ var EnchartixGraph = class {
         this.hoveredDayBySeries.clear();
         this.isDockAnimating = true;
       }
-      this.tooltip.setCssProps({ opacity: "0" });
+      this.chartWrapper.classList.remove("is-clickable");
+      this.tooltip.classList.remove("is-visible");
       resetInactivity();
     });
     this.controls.addEventListener("start", () => {
@@ -23187,7 +23256,7 @@ var EnchartixGraph = class {
         this.applyLayout(this.currentBoxWidth, this.currentBoxDepth, true);
       }
       if (this.inactivityTimer !== null) {
-        activeWindow.clearTimeout(this.inactivityTimer);
+        window.clearTimeout(this.inactivityTimer);
       }
     });
     this.controls.addEventListener("change", () => resetInactivity());
@@ -23271,23 +23340,12 @@ var EnchartixGraph = class {
     return anyChanged;
   }
   updateThemeColor(newHex) {
-    var _a;
     this.themeColor = newHex;
     while (this.graphGroup.children.length > 0) {
       const child = this.graphGroup.children[0];
       if (!child) break;
       this.graphGroup.remove(child);
-      if (child instanceof Mesh) {
-        child.geometry.dispose();
-        if (Array.isArray(child.material)) {
-          child.material.forEach((m) => m.dispose());
-        } else if (child.material instanceof Material) {
-          child.material.dispose();
-        }
-      } else if (child instanceof Sprite) {
-        (_a = child.material.map) == null ? void 0 : _a.dispose();
-        child.material.dispose();
-      }
+      disposeObject3D(child);
     }
     this.hitboxes = [];
     this.buildDataStructure();
@@ -23353,112 +23411,22 @@ var EnchartixGraph = class {
       attributeFilter: ["class"]
     });
   }
-  animate() {
-    var _a, _b, _c;
-    if (!activeDocument.body.contains(this.chartWrapper)) {
-      (_a = this.intersectionObserver) == null ? void 0 : _a.disconnect();
-      (_b = this.resizeObserver) == null ? void 0 : _b.disconnect();
-      (_c = this.themeObserver) == null ? void 0 : _c.disconnect();
-      return;
-    }
-    this.animationFrameID = requestAnimationFrame(this.animate);
-    if (!this.isVisible) return;
-    if (this.transition.active) {
-      const now2 = performance.now();
-      let t = (now2 - this.transition.startTime) / this.transition.duration;
-      if (t >= 1) {
-        t = 1;
-        this.transition.active = false;
-      }
-      const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-      this.camera.position.lerpVectors(
-        this.transition.startPos,
-        this.transition.endPos,
-        ease
-      );
-      this.controls.target.lerpVectors(
-        this.transition.startTarget,
-        this.transition.endTarget,
-        ease
-      );
-      this.camera.quaternion.slerpQuaternions(
-        this.transition.startQuat,
-        this.transition.endQuat,
-        ease
-      );
-      this.currentBoxWidth = this.transition.startWidth + (this.transition.endWidth - this.transition.startWidth) * ease;
-      this.currentBoxDepth = this.transition.startDepth + (this.transition.endDepth - this.transition.startDepth) * ease;
-      this.applyLayout(this.currentBoxWidth, this.currentBoxDepth, false);
-      if (t === 1) {
-        this.applyLayout(this.currentBoxWidth, this.currentBoxDepth, true);
-      }
-    } else {
-      this.controls.update();
-      if (this.isDockAnimating) {
-        const changed = this.stepDockMagnification();
-        if (changed) {
-          this.applyLayout(this.currentBoxWidth, this.currentBoxDepth, false, true);
-        } else {
-          this.isDockAnimating = false;
-          this.applyLayout(this.currentBoxWidth, this.currentBoxDepth, true, false);
-        }
-      }
-    }
-    if (this.vGridUniforms) {
-      const currentFill = this.vGridUniforms.fillProgress.value;
-      const targetFill = this.vGridUniforms.targetFill.value;
-      if (targetFill === 0 && currentFill > 0) {
-        this.vGridUniforms.fillProgress.value = 0;
-        this.verticalGrid.visible = false;
-      } else if (targetFill === 1 && currentFill < 1) {
-        this.vGridUniforms.fillProgress.value = Math.min(1, currentFill + 0.08);
-      }
-    }
-    this.graphGroup.children.forEach((child) => {
-      if (child instanceof Mesh && child.material instanceof Material) {
-        const uData = child.userData;
-        if (uData && uData.isDataElement && uData.targetOpacity !== void 0) {
-          if (Math.abs(child.material.opacity - uData.targetOpacity) > 0.01) {
-            child.material.opacity += (uData.targetOpacity - child.material.opacity) * 0.25;
-          }
-        }
-      }
-    });
-    const dir = new Vector3().subVectors(this.camera.position, this.controls.target).normalize();
-    const currentIsTopDown = dir.y > 0.707;
-    if (currentIsTopDown !== this.isTopDownView) {
-      this.isTopDownView = currentIsTopDown;
-      this.updateGradientDirection(this.isTopDownView);
-      this.updateGridOrientation();
-    }
-    this.composer.render();
-  }
   destroy() {
     var _a, _b, _c;
     this.isVisible = false;
     if (this.animationFrameID !== null) {
-      cancelAnimationFrame(this.animationFrameID);
+      window.cancelAnimationFrame(this.animationFrameID);
     }
     if (this.inactivityTimer !== null) {
-      activeWindow.clearTimeout(this.inactivityTimer);
+      window.clearTimeout(this.inactivityTimer);
     }
     (_a = this.intersectionObserver) == null ? void 0 : _a.disconnect();
     (_b = this.resizeObserver) == null ? void 0 : _b.disconnect();
     (_c = this.themeObserver) == null ? void 0 : _c.disconnect();
     this.scene.traverse((object) => {
-      var _a2;
-      if (object instanceof Mesh) {
-        object.geometry.dispose();
-        if (Array.isArray(object.material)) {
-          object.material.forEach((m) => m.dispose());
-        } else if (object.material instanceof Material) {
-          object.material.dispose();
-        }
-      } else if (object instanceof Sprite) {
-        (_a2 = object.material.map) == null ? void 0 : _a2.dispose();
-        object.material.dispose();
-      }
+      disposeObject3D(object);
     });
+    this.sharedSphereGeo.dispose();
     this.renderer.dispose();
     this.composer.dispose();
     this.controls.dispose();

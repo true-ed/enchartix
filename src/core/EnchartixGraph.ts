@@ -34,6 +34,8 @@ const defaultLabels: EnchartixLabels = {
 	tooltipEntries: "Values:",
 	tooltipCumulative: "Cumulative:",
 	tooltipGridScale: "Grid Scale:",
+	tooltipModePinned: "📌 Info: Pinned Top",
+	tooltipModeFloating: "💬 Info: Floating",
 };
 
 interface HorizontalGridUniforms {
@@ -55,6 +57,32 @@ interface VerticalGridUniforms {
 	topPadV: THREE.IUniform<number>;
 	bottomPadV: THREE.IUniform<number>;
 	accentColor: THREE.IUniform<THREE.Color>;
+}
+
+function disposeMaterial(mat: unknown): void {
+	if (Array.isArray(mat)) {
+		mat.forEach((item: unknown) => {
+			if (item instanceof THREE.Material) {
+				item.dispose();
+			}
+		});
+	} else if (mat instanceof THREE.Material) {
+		mat.dispose();
+	}
+}
+
+function disposeObject3D(obj: THREE.Object3D): void {
+	if (obj instanceof THREE.Mesh) {
+		if (obj.geometry instanceof THREE.BufferGeometry) {
+			obj.geometry.dispose();
+		}
+		disposeMaterial(obj.material);
+	} else if (obj instanceof THREE.Sprite) {
+		if (obj.material instanceof THREE.SpriteMaterial) {
+			obj.material.map?.dispose();
+			obj.material.dispose();
+		}
+	}
 }
 
 function computeNiceAxis(maxAbsValue: number, targetMaxCells: number): {
@@ -81,10 +109,6 @@ function computeNiceAxis(maxAbsValue: number, targetMaxCells: number): {
 	return { step, cells, ceil: cells * step };
 }
 
-/**
- * Computes independent Nice Scales for positive and negative values in a day
- * so both sides always fit their respective zones cleanly while keeping 0 strictly between the two anchor nodes.
- */
 function computeNiceDayScale(values: number[]): DayScaleInfo {
 	if (values.length === 0) {
 		return {
@@ -103,7 +127,10 @@ function computeNiceDayScale(values: number[]): DayScaleInfo {
 	const minVal = Math.min(0, ...values);
 
 	const posAxis = computeNiceAxis(maxVal, 15);
-	const negAxis = minVal < 0 ? computeNiceAxis(Math.abs(minVal), 8) : { step: posAxis.step, cells: 0, ceil: 0 };
+	const negAxis =
+		minVal < 0
+			? computeNiceAxis(Math.abs(minVal), 8)
+			: { step: posAxis.step, cells: 0, ceil: 0 };
 
 	const cellsPos = maxVal > 0 ? posAxis.cells : 10;
 	const maxCeil = maxVal > 0 ? posAxis.ceil : 10;
@@ -144,8 +171,7 @@ export class EnchartixGraph {
 	private parsedSeries: ParsedSeries[] = [];
 	private pointSpritesBySeries: (THREE.Sprite | null)[][] = [];
 	private is2DMode = false;
-    private isTooltipPinned = true;
-    private pinTooltipBtn!: HTMLButtonElement;
+	private isTooltipPinned = true;
 	private hoveredSegment: HitboxMesh | null = null;
 	private isTopDownView = false;
 	private isVisible = true;
@@ -154,11 +180,10 @@ export class EnchartixGraph {
 
 	private readonly BOX_HEIGHT = 120;
 	private readonly MIN_EXPANDED_DAY_WIDTH = 64;
-	private readonly INACTIVITY_DELAY_MS = 60000; // 1 full minute of zero interaction
+	private readonly INACTIVITY_DELAY_MS = 60000;
 	private currentBoxWidth = 260;
 	private currentBoxDepth: number;
 
-	// macOS Dock Magnification weights + Smooth-to-Sharp Focus Morph per series & day
 	private hoveredDayBySeries: Map<number, number> = new Map();
 	private dayWeightsBySeries: number[][] = [];
 	private dayFocusMorphBySeries: number[][] = [];
@@ -172,6 +197,7 @@ export class EnchartixGraph {
 	private chartWrapper!: HTMLDivElement;
 	private uiOverlay!: HTMLDivElement;
 	private toggleBtn!: HTMLButtonElement;
+	private pinTooltipBtn!: HTMLButtonElement;
 	private tooltip!: HTMLDivElement;
 	private ttTitle!: HTMLDivElement;
 	private ttDataContainer!: HTMLDivElement;
@@ -214,7 +240,7 @@ export class EnchartixGraph {
 		this.container = container;
 		this.data = data;
 		this.themeColor = options.themeColor ?? "#7d33ff";
-        this.isTooltipPinned = (options.tooltipMode ?? "pinned") === "pinned";
+		this.isTooltipPinned = (options.tooltipMode ?? "pinned") === "pinned";
 
 		const mergedLabels: EnchartixLabels = {
 			...defaultLabels,
@@ -250,8 +276,6 @@ export class EnchartixGraph {
 			endDepth: this.currentBoxDepth,
 		};
 
-		this.animate = this.animate.bind(this);
-
 		this.initDOM();
 		this.initThreeJS();
 		this.setupObservers();
@@ -267,7 +291,7 @@ export class EnchartixGraph {
 		});
 		this.toggleBtn.addEventListener("click", () => this.toggleViewMode());
 
-        this.pinTooltipBtn = this.uiOverlay.createEl("button", {
+		this.pinTooltipBtn = this.uiOverlay.createEl("button", {
 			cls: "enchartix-toggle-btn",
 			text: this.isTooltipPinned
 				? (this.labels.tooltipModePinned ?? "📌 Info: Pinned Top")
@@ -279,21 +303,14 @@ export class EnchartixGraph {
 				? (this.labels.tooltipModePinned ?? "📌 Info: Pinned Top")
 				: (this.labels.tooltipModeFloating ?? "💬 Info: Floating");
 			this.tooltip.classList.toggle("is-pinned", this.isTooltipPinned);
-			if (this.isTooltipPinned) {
-				this.tooltip.setCssProps({ top: "16px", right: "16px", left: "auto" });
-			}
 		});
 
 		this.tooltip = this.chartWrapper.createDiv({ cls: "enchartix-tooltip" });
-
-        this.tooltip.classList.toggle("is-pinned", this.isTooltipPinned);
+		this.tooltip.classList.toggle("is-pinned", this.isTooltipPinned);
+		this.tooltip.addEventListener("mousemove", (e: MouseEvent) => e.stopPropagation());
 
 		this.ttTitle = this.tooltip.createDiv({ cls: "enchartix-tooltip-title" });
 		this.ttTitle.id = "tt-title";
-		this.ttTitle.setCssProps({
-			color: this.themeColor,
-			"border-bottom-color": `${this.themeColor}44`,
-		});
 
 		this.ttDataContainer = this.tooltip.createDiv({ cls: "enchartix-tooltip-data" });
 		this.ttDataContainer.id = "tt-data";
@@ -306,28 +323,19 @@ export class EnchartixGraph {
 		const shadowAlpha = isDark ? "rgba(0,0,0,0.8)" : "rgba(0,0,0,0.15)";
 
 		this.chartWrapper.setCssProps({
-			"background-color": bgStr,
-			"box-shadow": `inset 0 10px 30px ${shadowAlpha}, inset 0 0 20px ${this.themeColor}33`,
-		});
-
-		this.toggleBtn.setCssProps({
-			background: isDark ? `${this.themeColor}22` : `${this.themeColor}15`,
-			border: `1px solid ${this.themeColor}`,
-			color: isDark ? this.themeColor : "#222",
-		});
-
-        this.pinTooltipBtn.setCssProps({
-			background: isDark ? `${this.themeColor}22` : `${this.themeColor}15`,
-			border: `1px solid ${this.themeColor}`,
-			color: isDark ? this.themeColor : "#222",
-		});
-
-		this.tooltip.setCssProps({
-			background: isDark ? "rgba(10, 10, 20, 0.88)" : "rgba(255, 255, 255, 0.92)",
-			color: isDark ? "#fff" : "#222",
-			"box-shadow": isDark
+			"--enchartix-theme": this.themeColor,
+			"--enchartix-bg": bgStr,
+			"--enchartix-wrapper-shadow": `inset 0 10px 30px ${shadowAlpha}, inset 0 0 20px ${this.themeColor}33`,
+			"--enchartix-btn-bg": isDark ? `${this.themeColor}22` : `${this.themeColor}15`,
+			"--enchartix-btn-color": isDark ? this.themeColor : "#222222",
+			"--enchartix-tt-bg": isDark
+				? "rgba(10, 10, 20, 0.88)"
+				: "rgba(255, 255, 255, 0.92)",
+			"--enchartix-tt-color": isDark ? "#ffffff" : "#222222",
+			"--enchartix-tt-shadow": isDark
 				? "0 4px 15px rgba(0, 0, 0, 0.5)"
 				: "0 4px 15px rgba(0, 0, 0, 0.1)",
+			"--enchartix-tt-accent": this.themeColor,
 		});
 	}
 
@@ -421,10 +429,6 @@ export class EnchartixGraph {
 		this.animate();
 	}
 
-	/**
-	 * Creates a crisp 3D billboard text sprite anchored at its bottom-right corner (1, 0)
-	 * so it always faces the camera while pivoting around the exact graph vertex!
-	 */
 	private createValueSprite(val: number, accentHex: string): THREE.Sprite {
 		const canvas = createEl("canvas");
 		canvas.width = 256;
@@ -433,7 +437,7 @@ export class EnchartixGraph {
 
 		if (ctx) {
 			const text = val > 0 ? `+${val}` : String(val);
-			ctx.font = "bold 64px system-ui, -apple-system, sans-serif";
+			ctx.font = "bold 46px system-ui, -apple-system, sans-serif";
 			const metrics = ctx.measureText(text);
 			const textW = metrics.width;
 
@@ -443,7 +447,6 @@ export class EnchartixGraph {
 			const boxX = 248 - boxW;
 			const boxY = 86 - boxH;
 
-			// Dark glass pill background for ultra-crisp contrast
 			ctx.fillStyle = "rgba(10, 10, 20, 0.82)";
 			ctx.strokeStyle = val < 0 ? "#ff6b81" : accentHex;
 			ctx.lineWidth = 3;
@@ -471,7 +474,6 @@ export class EnchartixGraph {
 		});
 
 		const sprite = new THREE.Sprite(material);
-		// Bottom-right corner anchor: pivots right around the 3D vertex!
 		sprite.center.set(1.0, 0.0);
 		sprite.scale.set(24, 9, 1);
 		sprite.renderOrder = 999;
@@ -543,7 +545,6 @@ export class EnchartixGraph {
 			let cumulative = 0;
 			let globalPtIdx = 0;
 
-			// Initial origin node (Day 0) on baseline
 			seriesObj.pointsData.push({
 				dayIndex: 0,
 				frac: 0,
@@ -607,7 +608,6 @@ export class EnchartixGraph {
 						globalPtIdx++;
 					});
 
-					// Closing anchor node at the end of the day on the baseline (0)
 					seriesObj.pointsData.push({
 						dayIndex,
 						frac: 1.0,
@@ -728,9 +728,9 @@ export class EnchartixGraph {
 		const mZ: number[] = new Array(n).fill(0) as number[];
 
 		for (let i = 0; i < n; i++) {
-			const prev = controlPts[Math.max(0, i - 1)]!;
-			const curr = controlPts[i]!;
-			const next = controlPts[Math.min(n - 1, i + 1)]!;
+			const prev = controlPts[Math.max(0, i - 1)];
+			const curr = controlPts[i];
+			const next = controlPts[Math.min(n - 1, i + 1)];
 
 			mY[i] = (next.y - prev.y) * 0.5;
 
@@ -739,25 +739,23 @@ export class EnchartixGraph {
 		}
 
 		const sampledPoints: THREE.Vector3[] = [];
-		// Adaptive subdivisions: keep total vertex count fast even with 365+ days!
 		const baseSubdiv = n > 150 ? 3 : n > 60 ? 5 : 8;
 
 		for (let i = 0; i < n - 1; i++) {
-			const p0 = controlPts[i]!;
-			const p1 = controlPts[i + 1]!;
+			const p0 = controlPts[i];
+			const p1 = controlPts[i + 1];
 			const dayIdx = pointDayIndices[i + 1] ?? 1;
 			const sharpMorph = dayFocusMorphs[Math.max(0, dayIdx - 1)] ?? 0.0;
 
-			// If segment is pure straight line (sharpMorph > 0.98) and Y is nearly linear, 2 steps are enough!
 			const localSubdiv = sharpMorph > 0.98 ? 2 : baseSubdiv;
 			const steps = i === n - 2 ? localSubdiv : localSubdiv - 1;
 
 			for (let s = 0; s <= steps; s++) {
 				const t = s / localSubdiv;
 				const x = p0.x + (p1.x - p0.x) * t;
-				const y = hermite(p0.y, p1.y, mY[i]!, mY[i + 1]!, t);
+				const y = hermite(p0.y, p1.y, mY[i], mY[i + 1], t);
 
-				const zSmooth = hermite(p0.z, p1.z, mZ[i]!, mZ[i + 1]!, t);
+				const zSmooth = hermite(p0.z, p1.z, mZ[i], mZ[i + 1], t);
 				const zSharp = p0.z + (p1.z - p0.z) * t;
 				const z = zSmooth + (zSharp - zSmooth) * sharpMorph;
 
@@ -767,7 +765,7 @@ export class EnchartixGraph {
 
 		const dedupedPoints: THREE.Vector3[] = [];
 		for (let i = 0; i < sampledPoints.length; i++) {
-			const pt = sampledPoints[i]!;
+			const pt = sampledPoints[i];
 			const prev = dedupedPoints[dedupedPoints.length - 1];
 			if (!prev || prev.distanceToSquared(pt) > 0.0001) {
 				dedupedPoints.push(pt);
@@ -803,7 +801,7 @@ export class EnchartixGraph {
 		for (let i = 0; i < count; i++) {
 			const y = posAttribute.getY(i);
 			const factor = Math.max(
-				0.15,
+				0.55,
 				Math.min(1, (y + this.BOX_HEIGHT / 2) / this.BOX_HEIGHT),
 			);
 			const c = colorBottom.clone().lerp(colorTop, factor);
@@ -840,37 +838,33 @@ export class EnchartixGraph {
 			const sprites = this.pointSpritesBySeries[exIndex] ?? [];
 			const hoveredDay = this.hoveredDayBySeries.get(exIndex) ?? -1;
 
-			// Pinned-Center Dock Layout: keep the hovered day's center anchored right under the cursor!
 			const nDays = weights.length;
 			const dayStartX: number[] = new Array(nDays + 1).fill(-boxWidth / 2) as number[];
 
 			if (hoveredDay > 0 && nDays > 1) {
 				const hIdx = hoveredDay - 1;
-				// Natural unexpanded center of the hovered day stays pinned under the mouse
 				const naturalCenterRatio = (hIdx + 0.5) / nDays;
 				const totalW = weights.reduce((acc, w) => acc + w, 0) || 1;
 				const hoveredWidthRatio = Math.min(0.38, (weights[hIdx] ?? 1) / totalW);
 
-				// Clamp so the expanded box never overflows the left or right chart border
 				const halfW = hoveredWidthRatio * 0.5;
 				const pinnedCenter = Math.max(halfW, Math.min(1 - halfW, naturalCenterRatio));
 				const hLeftRatio = pinnedCenter - halfW;
 				const hRightRatio = pinnedCenter + halfW;
 
-				// Distribute left neighbors smoothly into [0 .. hLeftRatio]
 				let leftWeightSum = 0;
 				for (let d = 0; d < hIdx; d++) leftWeightSum += weights[d] ?? 1;
 				let accumLeft = 0;
 				for (let d = 0; d < hIdx; d++) {
-					dayStartX[d] = -boxWidth / 2 + (accumLeft / (leftWeightSum || 1)) * hLeftRatio * boxWidth;
+					dayStartX[d] =
+						-boxWidth / 2 +
+						(accumLeft / (leftWeightSum || 1)) * hLeftRatio * boxWidth;
 					accumLeft += weights[d] ?? 1;
 				}
 
-				// Hovered day exact bounds
 				dayStartX[hIdx] = -boxWidth / 2 + hLeftRatio * boxWidth;
 				dayStartX[hIdx + 1] = -boxWidth / 2 + hRightRatio * boxWidth;
 
-				// Distribute right neighbors smoothly into [hRightRatio .. 1]
 				let rightWeightSum = 0;
 				for (let d = hIdx + 1; d < nDays; d++) rightWeightSum += weights[d] ?? 1;
 				let accumRight = 0;
@@ -879,7 +873,9 @@ export class EnchartixGraph {
 					accumRight += weights[d] ?? 1;
 					dayStartX[d + 1] =
 						-boxWidth / 2 +
-						(hRightRatio + (accumRight / (rightWeightSum || 1)) * rightSpanRatio) * boxWidth;
+						(hRightRatio +
+							(accumRight / (rightWeightSum || 1)) * rightSpanRatio) *
+							boxWidth;
 				}
 			} else {
 				const totalWeight = weights.reduce((acc, w) => acc + w, 0) || 1;
@@ -903,7 +899,6 @@ export class EnchartixGraph {
 				-this.BOX_HEIGHT / 2 +
 				((val - stats.minCumulative) / spanY) * this.BOX_HEIGHT;
 
-			// Independent positive (-Z) and negative (+Z) mapping from exact baseZ!
 			const mapZ = (normZ: number): number => {
 				if (normZ >= 0) {
 					return baseZ - normZ * maxPositiveReach;
@@ -944,22 +939,20 @@ export class EnchartixGraph {
 					sphere.scale.set(subScale, subScale, subScale);
 				}
 
-				// Lazy-create 3D value sprite ONLY when a day is actually focused!
 				if (!pt.isNode && morph > 0.02) {
 					let sprite = sprites[i];
 					if (!sprite) {
 						sprite = this.createValueSprite(pt.setVal, series.colorStr);
 						sprites[i] = sprite;
 					}
-					sprite.position.set(pos.x, pos.y + 0.8, pos.z);
-					sprite.material.opacity = Math.pow(morph, 1.5);
-					sprite.visible = true;
-
-                    const zoomScale =
-						(this.viewSize / 320) /
+					const zoomScale =
+						this.viewSize /
+						320 /
 						(this.camera ? Math.max(0.35, this.camera.zoom) : 1.0);
 					sprite.scale.set(26 * zoomScale, 9.75 * zoomScale, 1);
 					sprite.position.set(pos.x, pos.y + 1.2 * zoomScale, pos.z);
+					sprite.material.opacity = Math.pow(morph, 1.5);
+					sprite.visible = true;
 				} else {
 					const sprite = sprites[i];
 					if (sprite && sprite.visible) {
@@ -969,7 +962,9 @@ export class EnchartixGraph {
 			});
 
 			if (series.meshes.tube && curvePoints.length > 1) {
-				const zoomFactor = this.camera ? Math.sqrt(Math.max(0.3, this.camera.zoom)) : 1.0;
+				const zoomFactor = this.camera
+					? Math.sqrt(Math.max(0.3, this.camera.zoom))
+					: 1.0;
 				const dynamicRadius = 0.55 / zoomFactor;
 				const tubeGeo = this.buildHybridMorphTubeGeometry(
 					curvePoints,
@@ -1011,7 +1006,6 @@ export class EnchartixGraph {
 				center.x = (x0 + x1) / 2;
 				center.z = exactCenterZ;
 
-				// Exact UV coordinates so the 0-line in the shader passes strictly through baseZ (between the 2 anchor nodes!)
 				const exactZeroV = (zBottomEdge - baseZ) / exactDepthZ;
 				const exactTopPadV = Z_PAD / exactDepthZ;
 				const exactBottomPadV = Z_PAD / exactDepthZ;
@@ -1229,7 +1223,7 @@ export class EnchartixGraph {
 			this.hoveredSegment = null;
 			this.hoveredDayBySeries.clear();
 			this.isDockAnimating = true;
-			this.tooltip.setCssProps({ opacity: "0" });
+			this.tooltip.classList.remove("is-visible");
 			this.vGridUniforms.targetFill.value = 0.0;
 		}
 
@@ -1262,16 +1256,16 @@ export class EnchartixGraph {
 		this.transition.startTime = performance.now();
 		this.transition.active = true;
 		if (this.inactivityTimer !== null) {
-			activeWindow.clearTimeout(this.inactivityTimer);
+			window.clearTimeout(this.inactivityTimer);
 		}
 	}
 
 	private setupInteractions(): void {
 		const resetInactivity = (): void => {
 			if (this.inactivityTimer !== null) {
-				activeWindow.clearTimeout(this.inactivityTimer);
+				window.clearTimeout(this.inactivityTimer);
 			}
-			this.inactivityTimer = activeWindow.setTimeout(() => {
+			this.inactivityTimer = window.setTimeout(() => {
 				this.transition.startPos.copy(this.camera.position);
 				this.transition.startTarget.copy(this.controls.target);
 				this.transition.startQuat.copy(this.camera.quaternion);
@@ -1342,9 +1336,8 @@ export class EnchartixGraph {
 					});
 
 					this.ttTitle.textContent = `${data.date} (${data.exercise})`;
-					this.ttTitle.setCssProps({
-						color: data.color,
-						"border-color": data.color,
+					this.tooltip.setCssProps({
+						"--enchartix-tt-accent": data.color,
 					});
 
 					this.ttDataContainer.replaceChildren();
@@ -1371,7 +1364,7 @@ export class EnchartixGraph {
 					});
 					cumulativeDiv.createEl("b", { text: String(data.total) });
 
-                    if (data.note) {
+					if (data.note) {
 						this.ttDataContainer.createDiv({
 							cls: "enchartix-tooltip-note",
 							text: `📝 "${data.note}"`,
@@ -1379,34 +1372,15 @@ export class EnchartixGraph {
 					}
 
 					if (data.file) {
-						const hint = this.ttDataContainer.createDiv({
+						this.ttDataContainer.createDiv({
 							cls: "enchartix-tooltip-link-hint",
 							text: `🔗 Click to open: ${data.file}`,
 						});
-						hint.setCssProps({ color: data.color });
 					}
-					this.chartWrapper.setCssProps({
-						cursor: data.file ? "pointer" : "default",
-					});
+					this.chartWrapper.classList.toggle("is-clickable", Boolean(data.file));
 				}
 
-				const tw = this.tooltip.offsetWidth;
-				const th = this.tooltip.offsetHeight;
-
-				let tLeft = clientX - rect.left + 15;
-				let tTop = clientY - rect.top + 15;
-
-				if (tLeft + tw > rect.width) tLeft = clientX - rect.left - tw - 15;
-				if (tTop + th > rect.height) tTop = clientY - rect.top - th - 15;
-
-				if (this.isTooltipPinned) {
-					this.tooltip.setCssProps({
-						opacity: "1",
-						top: "16px",
-						right: "16px",
-						left: "auto",
-					});
-				} else {
+				if (!this.isTooltipPinned) {
 					const tw = this.tooltip.offsetWidth;
 					const th = this.tooltip.offsetHeight;
 
@@ -1417,12 +1391,11 @@ export class EnchartixGraph {
 					if (tTop + th > rect.height) tTop = clientY - rect.top - th - 15;
 
 					this.tooltip.setCssProps({
-						opacity: "1",
-						right: "auto",
-						left: `${Math.max(10, Math.min(tLeft, rect.width - tw - 10))}px`,
-						top: `${Math.max(10, Math.min(tTop, rect.height - th - 10))}px`,
+						"--enchartix-tt-left": `${Math.max(10, Math.min(tLeft, rect.width - tw - 10))}px`,
+						"--enchartix-tt-top": `${Math.max(10, Math.min(tTop, rect.height - th - 10))}px`,
 					});
 				}
+				this.tooltip.classList.add("is-visible");
 			} else {
 				if (this.hoveredSegment) {
 					this.hoveredSegment.material.opacity = 0.0;
@@ -1437,7 +1410,8 @@ export class EnchartixGraph {
 						}
 					});
 				}
-				this.tooltip.setCssProps({ opacity: "0" });
+				this.chartWrapper.classList.remove("is-clickable");
+				this.tooltip.classList.remove("is-visible");
 			}
 		};
 
@@ -1472,7 +1446,8 @@ export class EnchartixGraph {
 				this.hoveredDayBySeries.clear();
 				this.isDockAnimating = true;
 			}
-			this.tooltip.setCssProps({ opacity: "0" });
+			this.chartWrapper.classList.remove("is-clickable");
+			this.tooltip.classList.remove("is-visible");
 			resetInactivity();
 		});
 
@@ -1482,15 +1457,15 @@ export class EnchartixGraph {
 				this.applyLayout(this.currentBoxWidth, this.currentBoxDepth, true);
 			}
 			if (this.inactivityTimer !== null) {
-				activeWindow.clearTimeout(this.inactivityTimer);
+				window.clearTimeout(this.inactivityTimer);
 			}
 		});
 
 		this.controls.addEventListener("change", () => resetInactivity());
 		this.controls.addEventListener("end", () => resetInactivity());
 		resetInactivity();
-        
-        let pointerDownPos = { x: 0, y: 0 };
+
+		let pointerDownPos = { x: 0, y: 0 };
 		this.chartWrapper.addEventListener("pointerdown", (e: PointerEvent) => {
 			pointerDownPos = { x: e.clientX, y: e.clientY };
 		});
@@ -1500,7 +1475,6 @@ export class EnchartixGraph {
 				e.clientX - pointerDownPos.x,
 				e.clientY - pointerDownPos.y,
 			);
-			// Only trigger if user clicked without dragging/rotating the 3D camera
 			if (moveDist < 5 && this.hoveredSegment) {
 				const data = this.hoveredSegment.userData as HitboxUserData;
 				if (data.file) {
@@ -1517,7 +1491,7 @@ export class EnchartixGraph {
 				}
 			}
 		});
-    }
+	}
 
 	private stepDockMagnification(): boolean {
 		this.dirtySeries.clear();
@@ -1595,17 +1569,7 @@ export class EnchartixGraph {
 			const child = this.graphGroup.children[0];
 			if (!child) break;
 			this.graphGroup.remove(child);
-			if (child instanceof THREE.Mesh) {
-				child.geometry.dispose();
-				if (Array.isArray(child.material)) {
-					child.material.forEach((m: THREE.Material) => m.dispose());
-				} else if (child.material instanceof THREE.Material) {
-					child.material.dispose();
-				}
-			} else if (child instanceof THREE.Sprite) {
-				child.material.map?.dispose();
-				child.material.dispose();
-			}
+			disposeObject3D(child);
 		}
 
 		this.hitboxes = [];
@@ -1684,14 +1648,14 @@ export class EnchartixGraph {
 		});
 	}
 
-	private animate(): void {
+	private readonly animate = (): void => {
 		if (!activeDocument.body.contains(this.chartWrapper)) {
 			this.intersectionObserver?.disconnect();
 			this.resizeObserver?.disconnect();
 			this.themeObserver?.disconnect();
 			return;
 		}
-		this.animationFrameID = requestAnimationFrame(this.animate);
+		this.animationFrameID = window.requestAnimationFrame(this.animate);
 		if (!this.isVisible) return;
 
 		if (this.transition.active) {
@@ -1780,15 +1744,15 @@ export class EnchartixGraph {
 		}
 
 		this.composer.render();
-	}
+	};
 
 	public destroy(): void {
 		this.isVisible = false;
 		if (this.animationFrameID !== null) {
-			cancelAnimationFrame(this.animationFrameID);
+			window.cancelAnimationFrame(this.animationFrameID);
 		}
 		if (this.inactivityTimer !== null) {
-			activeWindow.clearTimeout(this.inactivityTimer);
+			window.clearTimeout(this.inactivityTimer);
 		}
 
 		this.intersectionObserver?.disconnect();
@@ -1796,18 +1760,9 @@ export class EnchartixGraph {
 		this.themeObserver?.disconnect();
 
 		this.scene.traverse((object) => {
-			if (object instanceof THREE.Mesh) {
-				object.geometry.dispose();
-				if (Array.isArray(object.material)) {
-					object.material.forEach((m: THREE.Material) => m.dispose());
-				} else if (object.material instanceof THREE.Material) {
-					object.material.dispose();
-				}
-			} else if (object instanceof THREE.Sprite) {
-				object.material.map?.dispose();
-				object.material.dispose();
-			}
+			disposeObject3D(object);
 		});
+		this.sharedSphereGeo.dispose();
 
 		this.renderer.dispose();
 		this.composer.dispose();
