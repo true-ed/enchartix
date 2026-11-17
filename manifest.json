@@ -1,7 +1,7 @@
 {
   "id": "enchartix",
   "name": "Enchartix 3D Graph",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minAppVersion": "1.4.0",
   "description": "3D data visualization and cardiograms for Dataview.",
   "author": "Prykhozhai Andrii-Eduard",
